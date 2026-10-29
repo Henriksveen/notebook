@@ -256,6 +256,17 @@ instructions.
 - `@types/node` pinned to `^24`; `tsconfig` sets `"types": ["node"]`.
 - Biome does not process Markdown files.
 
+## Accepted implementation decisions (Task 2)
+
+- Lock timeout rounds up to whole seconds (util-linux `flock` limitation).
+- Secret findings for attachment filenames use location `attachment:filename` (never echo the name).
+- A failure while scanning unpublished commits fails closed as `blocked/secret_in_unpublished_commit`.
+- `ready` is only valid from `draft`. `init` on an existing notebook is a no-op (may add `origin`).
+- Commits use a repo-local `notebook` identity only when no `user.email` is configured.
+- Entries/attachments are written 0600, directories 0700.
+- `git push` runs in its own process group with stdio ignored and `GIT_SSH_COMMAND` defaulting to
+  `ssh -o BatchMode=yes`; on timeout the whole group is killed.
+
 ## Install script
 
 `scripts/install.sh` — opt-in, run by the user. Links `~/.local/bin/notebook` → repo
