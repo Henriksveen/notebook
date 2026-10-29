@@ -236,16 +236,28 @@ export function restoreEntry(
   );
 }
 
-export function addAttachment(
+export async function addAttachment(
   dir: string,
   id: string,
   expectedRevision: string,
   sourcePath: string,
   options: AttachmentOptions = {},
-): Promise<MutationResult> {
-  return changeEntry(dir, id, expectedRevision, "attach", options, (current) =>
-    attachmentPlan(current, sourcePath, options.name),
+): Promise<MutationResult & { attachment: Attachment }> {
+  let added: Attachment | undefined;
+  const result = await changeEntry(
+    dir,
+    id,
+    expectedRevision,
+    "attach",
+    options,
+    async (current) => {
+      const plan = await attachmentPlan(current, sourcePath, options.name);
+      added = plan.entry.entry.attachments.at(-1);
+      return plan;
+    },
   );
+  if (!added) throw new Error("attachment record missing");
+  return { ...result, attachment: added };
 }
 
 export async function retryBackup(

@@ -222,16 +222,23 @@ async function runAttach({
   positionals,
   values,
 }: Context): Promise<Outcome> {
-  return mutation(
-    await addAttachment(
-      dir,
-      requireId(positionals),
-      requireRevision(values),
-      required(values.file, "--file"),
-      { port, name: values.name },
-    ),
-    "Attached a file to",
+  const result = await addAttachment(
+    dir,
+    requireId(positionals),
+    requireRevision(values),
+    required(values.file, "--file"),
+    { port, name: values.name },
   );
+  const outcome = mutation(result, "Attached a file to");
+  const { id, filename, media_type, size } = result.attachment;
+  return {
+    ...outcome,
+    data: {
+      ...(outcome.data as Record<string, unknown>),
+      attachment: { id, filename, media_type, size, ref: `attachment:${id}` },
+    },
+    text: `${outcome.text}\nAttachment: ${filename} (attachment:${id})`,
+  };
 }
 
 async function runStatus({ dir }: Context): Promise<Outcome> {

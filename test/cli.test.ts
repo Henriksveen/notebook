@@ -616,7 +616,8 @@ describe("attach", () => {
       "--json",
     ]);
     assert.equal(result.code, 0, result.stderr);
-    assert.equal(parseEnvelope(result).data?.id, created.id);
+    const attached = parseEnvelope(result).data;
+    assert.equal(attached?.id, created.id);
     assert.deepEqual(await readFile(source), bytes);
 
     const read = parseEnvelope(
@@ -629,6 +630,14 @@ describe("attach", () => {
     assert.equal(attachments[0]?.filename, "diagram.png");
     assert.equal(attachments[0]?.media_type, "image/png");
     assert.equal(attachments[0]?.size, bytes.byteLength);
+    assert.deepEqual(attached?.attachment, {
+      id: attachments[0]?.id,
+      filename: "diagram.png",
+      media_type: "image/png",
+      size: bytes.byteLength,
+      ref: `attachment:${attachments[0]?.id}`,
+    });
+    assert.equal(attached?.revision, read.data?.revision);
   });
 
   it("honors --name, rejects a missing file, and rejects a symlink", async () => {
