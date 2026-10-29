@@ -20,3 +20,7 @@ export function resolvePort(
 export function entryUrl(id: string, port: number = DEFAULT_PORT): string {
   return `http://127.0.0.1:${port}/entries/${id}`;
 }
+
+export function homeUrl(port: number = DEFAULT_PORT): string {
+  return `http://127.0.0.1:${port}/`;
+}

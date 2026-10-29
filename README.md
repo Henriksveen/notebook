@@ -2,7 +2,7 @@
 
 A personal, private, local-first knowledge notebook. Agents save standalone Markdown
 entries through a command-line tool, and entries live in a plain git repository you own.
-A read-only local website for browsing them is planned (Task 4).
+A read-only local website for browsing them is included (see [Website](#website)).
 
 ## Requirements
 
@@ -30,10 +30,12 @@ notebook validate --input entry.json           # check without writing
 notebook validate <id>
 notebook status
 notebook backup                                # retry pushing unpublished commits
+notebook open [ID] [--no-browser]              # start or reuse the website and open it
+notebook serve                                 # run the website in the foreground
 ```
 
 Global options: `--dir PATH` (or `NOTEBOOK_DIR`), `--json`, `--port N` (or `NOTEBOOK_PORT`,
-default `43127`, used only to build entry URLs), `--help`.
+default `43127`, used for entry URLs and the website), `--help`.
 
 There is no delete command. Archive an entry instead.
 
@@ -113,6 +115,29 @@ passwords are blocked with `SECRET_DETECTED`. The error names the rule and locat
 
 This is a safeguard, not a guarantee. It cannot find every secret, and binary attachments
 are not scanned. There is no bypass flag. Do not rely on it as your only protection.
+
+## Website
+
+`notebook open [ID] [--no-browser]` starts the local website if it is not running, or reuses
+it, then opens the home page (or the entry page when an ID is given) with `xdg-open`.
+`notebook serve` runs the same website in the foreground until Ctrl+C. Both use port `43127`
+by default (`--port N` or `NOTEBOOK_PORT`), and reject a port already used by something else
+(`PORT_IN_USE`) instead of switching ports. Output from a website started by `open` goes to
+`.notebook/server.log` inside the notebook.
+
+- The server listens on `127.0.0.1` only and answers `GET`/`HEAD` only. Requests must use
+  a `Host` of `127.0.0.1:<port>` or `localhost:<port>`.
+- It is read-only: it can list, search, and show entries, and download attachments.
+  Attachments are only served when the entry lists them. Raster images are shown inline;
+  other files (including HTML and SVG) are downloaded as `application/octet-stream`.
+- Archived entries are hidden from the home page, projects, topics, and search. Search
+  includes them with `include_archived=1` or `status=archived`. An archived entry is still
+  reachable at `/entries/<id>`, with an "Archived" banner.
+- Markdown is rendered without raw HTML. Links are limited to http, https, mailto, and
+  the entry's own attachments. Images may only come from the entry's own attachments.
+- Localhost is not authentication. Any program or user on this machine can read the
+  notebook through the website while it runs. Stop it with Ctrl+C for `serve`; a website
+  started by `open` keeps running until you stop its process.
 
 ## Development
 

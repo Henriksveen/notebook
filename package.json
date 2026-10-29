@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "node --test test/*.test.ts",
+    "test": "node --test --test-concurrency=4 test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "test:e2e": "node scripts/e2e.ts"

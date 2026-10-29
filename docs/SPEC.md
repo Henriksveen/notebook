@@ -278,6 +278,15 @@ instructions.
 - `validate` also runs the secret scan.
 - Argument-parse errors use fixed messages (Node's raw messages may echo values).
 
+## Accepted implementation decisions (Task 4)
+
+- Every response also sends `Cache-Control: no-store`.
+- Web lists are capped (home 50, other lists 200) without pagination.
+- Unknown project/topic pages return 200 with an empty list; invalid `status` on `/search` is ignored.
+- Attachments of archived entries are still served (their entry pages remain reachable).
+- Disallowed links/images keep their text/alt but lose `href`/`src`.
+- `npm test` runs with `--test-concurrency=4` to avoid git/process contention.
+
 ## Install script
 
 `scripts/install.sh` — opt-in, run by the user. Links `~/.local/bin/notebook` → repo

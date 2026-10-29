@@ -32,6 +32,7 @@ export async function main(argv: string[]): Promise<number> {
       positionals,
       values,
     });
+    if (outcome.silent) return 0;
     if (json) {
       process.stdout.write(successJson(outcome));
     } else {

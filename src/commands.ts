@@ -24,11 +24,14 @@ import {
   formatEntry,
   formatInit,
   formatMutation,
+  formatOpen,
   formatSearch,
   formatStatus,
   type Outcome,
   type StatusData,
+  successJson,
 } from "./output.ts";
+import { isValidId } from "./paths.ts";
 import {
   describeErrors,
   STATUSES,
@@ -38,6 +41,8 @@ import {
 import { searchNotebook } from "./search.ts";
 import { type SecretFinding, scanEntry } from "./secrets.ts";
 import { buildNewEntry, readEntry } from "./store.ts";
+import { openNotebook } from "./web/open.ts";
+import { createServer } from "./web/server.ts";
 
 const INPUT_LIMIT_BYTES = 4 * 1024 * 1024;
 
@@ -63,6 +68,8 @@ export const HANDLERS: Record<CommandName, Handler> = {
   attach: runAttach,
   status: runStatus,
   backup: runBackup,
+  open: runOpen,
+  serve: runServe,
 };
 
 async function runInit({ dir, values }: Context): Promise<Outcome> {
@@ -251,6 +258,57 @@ async function runStatus({ dir }: Context): Promise<Outcome> {
 async function runBackup({ dir }: Context): Promise<Outcome> {
   const backup = await retryBackup(dir);
   return { data: {}, backup, warnings: [], text: formatBackup(backup) };
+}
+
+async function runOpen({
+  dir,
+  port,
+  positionals,
+  values,
+}: Context): Promise<Outcome> {
+  await assertNotebook(dir);
+  const id = positionals[0];
+  if (id !== undefined) {
+    if (!isValidId(id)) throw usage("ID must be a UUID v4");
+    await readEntry(dir, id);
+  }
+  const opened = await openNotebook({
+    dir,
+    port,
+    entryId: id,
+    noBrowser: values["no-browser"] === true,
+  });
+  return {
+    data: { url: opened.url, reused: opened.reused },
+    warnings: opened.warnings,
+    text: formatOpen(opened.url, opened.reused),
+  };
+}
+
+async function runServe({ dir, port, values }: Context): Promise<Outcome> {
+  await assertNotebook(dir);
+  const server = await createServer({ dir, port });
+  const data = { url: server.url, reused: false };
+  process.stdout.write(
+    values.json
+      ? successJson({ data, warnings: [], text: "" })
+      : `Serving the notebook at ${server.url} (Ctrl+C to stop)\n`,
+  );
+  await waitForStop();
+  await server.close();
+  return { data, warnings: [], text: "", silent: true };
+}
+
+function waitForStop(): Promise<void> {
+  return new Promise((resolve) => {
+    const stop = () => {
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
+      resolve();
+    };
+    process.on("SIGINT", stop);
+    process.on("SIGTERM", stop);
+  });
 }
 
 function mutation(result: MutationResult, verb: string): Outcome {

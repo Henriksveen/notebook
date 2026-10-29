@@ -14,6 +14,8 @@ export const COMMANDS = [
   "attach",
   "status",
   "backup",
+  "open",
+  "serve",
 ] as const;
 
 export type CommandName = (typeof COMMANDS)[number];
@@ -35,6 +37,7 @@ export interface Values {
   "include-archived"?: boolean;
   limit?: string;
   offset?: string;
+  "no-browser"?: boolean;
 }
 
 type OptionName = keyof Values;
@@ -56,6 +59,7 @@ const OPTIONS = {
   "include-archived": { type: "boolean" },
   limit: { type: "string" },
   offset: { type: "string" },
+  "no-browser": { type: "boolean" },
 } as const;
 
 const GLOBAL_OPTIONS: OptionName[] = ["dir", "json", "help", "port"];
@@ -96,6 +100,8 @@ const COMMAND_SPECS: Record<CommandName, CommandSpec> = {
   },
   status: { positionals: "none", options: [] },
   backup: { positionals: "none", options: [] },
+  open: { positionals: "optional-id", options: ["no-browser"] },
+  serve: { positionals: "none", options: [] },
 };
 
 export type Invocation =

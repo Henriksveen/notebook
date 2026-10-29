@@ -12,6 +12,7 @@ export interface Outcome {
   backup?: BackupResult;
   warnings: string[];
   text: string;
+  silent?: boolean;
 }
 
 export interface Failure {
@@ -46,11 +47,13 @@ Commands:
   attach ID --expected-revision HASH --file PATH [--name NAME]
   status                                  Show repository and backup status
   backup                                  Retry pushing unpublished commits
+  open [ID] [--no-browser]                Start or reuse the local website and open it
+  serve                                   Run the local website in the foreground
 
 Global options:
   --dir PATH    Notebook directory (default: $NOTEBOOK_DIR or ~/notebook)
   --json        Print one JSON object on stdout
-  --port N      Port used in entry URLs (default: $NOTEBOOK_PORT or 43127)
+  --port N      Website port for URLs (default: $NOTEBOOK_PORT or 43127)
   --help, -h    Show this help
 `;
 
@@ -193,4 +196,10 @@ export function formatStatus(data: StatusData): string {
 
 export function formatBackup(backup: BackupResult): string {
   return `Backup: ${backupLabel(backup)}`;
+}
+
+export function formatOpen(url: string, reused: boolean): string {
+  return reused
+    ? `Notebook website already running: ${url}`
+    : `Started the notebook website: ${url}`;
 }

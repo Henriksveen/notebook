@@ -12,6 +12,8 @@ export interface LockOptions {
   timeoutMs?: number;
 }
 
+export type LockName = "write.lock" | "open.lock";
+
 interface HeldLock {
   child: ChildProcess;
   exited: Promise<number | null>;
@@ -21,12 +23,21 @@ export function runtimeDir(dir: string): string {
   return join(dir, ".notebook");
 }
 
-export async function withWriteLock<T>(
+export function withWriteLock<T>(
   dir: string,
   fn: () => Promise<T>,
   options: LockOptions = {},
 ): Promise<T> {
-  const lockFile = await prepareLockFile(dir);
+  return withLock(dir, "write.lock", fn, options);
+}
+
+export async function withLock<T>(
+  dir: string,
+  name: LockName,
+  fn: () => Promise<T>,
+  options: LockOptions = {},
+): Promise<T> {
+  const lockFile = await prepareLockFile(dir, name);
   const held = await acquire(
     lockFile,
     options.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS,
@@ -38,11 +49,11 @@ export async function withWriteLock<T>(
   }
 }
 
-async function prepareLockFile(dir: string): Promise<string> {
+async function prepareLockFile(dir: string, name: LockName): Promise<string> {
   const runtime = runtimeDir(dir);
   await assertSafePath(dir, runtime);
   await mkdir(runtime, { recursive: true, mode: 0o700 });
-  const lockFile = join(runtime, "write.lock");
+  const lockFile = join(runtime, name);
   await assertSafePath(dir, lockFile);
   const handle = await open(lockFile, "a", 0o600);
   await handle.close();

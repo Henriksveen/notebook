@@ -879,7 +879,7 @@ describe("secret detection", () => {
 describe("usage errors", () => {
   it("exits 2 for unknown and removed commands", async () => {
     const sandbox = await newSandbox();
-    for (const command of ["frobnicate", "delete", "open", "serve"]) {
+    for (const command of ["frobnicate", "delete"]) {
       const result = await cli(sandbox, [command, "--json"]);
       await expectError(result, "USAGE", 2);
     }
