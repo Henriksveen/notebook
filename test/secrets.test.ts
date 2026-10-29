@@ -69,6 +69,63 @@ describe("scanText locations", () => {
     const findings = scanText(`fine\n${SAMPLES.jwt}\n`, "body");
     assert.deepEqual(findings, [{ rule: "jwt", location: "body:line 2" }]);
   });
+
+  it("detects a credential whose value is on the next line", () => {
+    const findings = scanText(
+      "config:\npassword:\n  actualP4ssword123\n",
+      "body",
+    );
+    assert.deepEqual(findings, [
+      { rule: "credential-assignment", location: "body:line 2" },
+    ]);
+  });
+
+  it("ignores placeholders split across lines", () => {
+    assert.deepEqual(
+      scanText(
+        `password:\n  <your-password>\ntoken:\n  ${DOLLAR}{TOKEN}\nsecret:\n\n  example-secret\n`,
+        "body",
+      ),
+      [],
+    );
+  });
+});
+
+describe("scanText performance", () => {
+  const SIZE = 2 * 1024 * 1024;
+  const BASE64 =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let seed = 7;
+  const randomBase64 = Array.from({ length: SIZE }, () => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return BASE64[seed % BASE64.length];
+  }).join("");
+  const patterns: Record<string, string> = {
+    "a.": "a.",
+    "a:": "a:",
+    "password=": "password=",
+    "password:\n": "password:\n",
+    "-": "-",
+    "-eyJ": "-eyJ",
+    eyJ: "eyJ",
+    "://": "://",
+    "a://": "a://",
+  };
+
+  for (const [name, unit] of Object.entries(patterns)) {
+    it(`scans 2 MiB of "${name}" in under a second`, () => {
+      const text = unit.repeat(Math.ceil(SIZE / unit.length));
+      const started = performance.now();
+      scanText(text, "body");
+      assert.ok(performance.now() - started < 1000, `${name} is too slow`);
+    });
+  }
+
+  it("scans 2 MiB of random base64 in under a second", () => {
+    const started = performance.now();
+    scanText(randomBase64, "body");
+    assert.ok(performance.now() - started < 1000, "random base64 is too slow");
+  });
 });
 
 describe("scanEntry", () => {

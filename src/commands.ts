@@ -242,13 +242,14 @@ async function runAttach({
 }
 
 async function runStatus({ dir }: Context): Promise<Outcome> {
+  const warnings: string[] = [];
   const status: StatusData = (await isNotebook(dir))
     ? {
         dir,
         repo_ok: true,
         head_commit: (await headCommit(dir)) ?? null,
         remote_configured: await hasRemote(dir),
-        unpublished_commits: (await unpublishedCommits(dir)).length,
+        unpublished_commits: await countUnpublished(dir, warnings),
         last_backup: await readBackupState(dir),
       }
     : {
@@ -259,12 +260,24 @@ async function runStatus({ dir }: Context): Promise<Outcome> {
         unpublished_commits: 0,
         last_backup: null,
       };
-  return { data: status, warnings: [], text: formatStatus(status) };
+  return { data: status, warnings, text: formatStatus(status) };
+}
+
+async function countUnpublished(
+  dir: string,
+  warnings: string[],
+): Promise<number | null> {
+  try {
+    return (await unpublishedCommits(dir)).length;
+  } catch {
+    warnings.push("could not count unpublished commits");
+    return null;
+  }
 }
 
 async function runBackup({ dir }: Context): Promise<Outcome> {
-  const backup = await retryBackup(dir);
-  return { data: {}, backup, warnings: [], text: formatBackup(backup) };
+  const { backup, warnings } = await retryBackup(dir);
+  return { data: {}, backup, warnings, text: formatBackup(backup) };
 }
 
 async function runOpen({

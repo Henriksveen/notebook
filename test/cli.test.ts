@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   cleanupTempDirs,
   git,
   makeBareRemote,
+  makeFailingRevListGit,
   makeTempDir,
 } from "./fixtures.ts";
 
@@ -15,6 +16,7 @@ after(cleanupTempDirs);
 
 const BIN = fileURLToPath(new URL("../bin/notebook", import.meta.url));
 const SECRET = `ghp_${"A".repeat(36)}`;
+const SECRET_KEY = `sk-${"a".repeat(40)}`;
 const SECRET_BODY = `Token for the build: ${SECRET}\n`;
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -263,6 +265,27 @@ describe("create", () => {
       await expectError(result, "VALIDATION_FAILED", 1);
     }
     assert.deepEqual(await entryFiles(sandbox), []);
+  });
+
+  it("never echoes an unknown field name, even when it looks like a secret", async () => {
+    const sandbox = await newSandbox();
+    const result = await cli(
+      sandbox,
+      ["create", "--input", "-", "--json"],
+      draftInput({ [SECRET_KEY]: "x" }),
+    );
+    const envelope = await expectError(result, "VALIDATION_FAILED", 1);
+    assert.match(envelope.error?.message ?? "", /is not a known field/);
+    assert.equal(result.stdout.includes(SECRET_KEY), false);
+    assert.equal(result.stderr.includes(SECRET_KEY), false);
+    const validated = await cli(
+      sandbox,
+      ["validate", "--input", "-"],
+      draftInput({ [SECRET_KEY]: "x" }),
+    );
+    assert.equal(validated.code, 1);
+    assert.equal(validated.stdout.includes(SECRET_KEY), false);
+    assert.equal(validated.stderr.includes(SECRET_KEY), false);
   });
 
   it("reports invalid JSON as VALIDATION_FAILED", async () => {
@@ -800,6 +823,23 @@ describe("status", () => {
     const homeResult = await runProcess(BIN, ["--json", "status"], { env });
     assert.equal(parseEnvelope(homeResult).data?.dir, join(home, "notebook"));
   });
+
+  it("reports unpublished_commits as null with a warning when git cannot list them", async () => {
+    const sandbox = await newSandbox();
+    const env = sandboxEnv(sandbox.home);
+    env.PATH = `${await makeFailingRevListGit()}${delimiter}${process.env.PATH ?? ""}`;
+    const result = await runProcess(
+      BIN,
+      ["--dir", sandbox.dir, "--json", "status"],
+      {
+        env,
+      },
+    );
+    assert.equal(result.code, 0, result.stderr);
+    const envelope = parseEnvelope(result);
+    assert.equal(envelope.data?.unpublished_commits, null);
+    assert.equal(envelope.warnings.length, 1);
+  });
 });
 
 describe("backup", () => {
@@ -841,6 +881,40 @@ describe("backup", () => {
     const result = await cli(sandbox, ["create", "--input", "-"], draftInput());
     assert.equal(result.code, 0, result.stderr);
     assert.match(result.stdout, /Backup: pushed/);
+  });
+
+  it("keeps a committed save successful when the backup state cannot be recorded", async () => {
+    const sandbox = await newSandbox();
+    await mkdir(join(sandbox.dir, ".notebook", "backup-state.json"), {
+      recursive: true,
+    });
+    const result = await cli(
+      sandbox,
+      ["create", "--input", "-", "--json"],
+      draftInput(),
+    );
+    assert.equal(result.code, 0, result.stderr);
+    const envelope = parseEnvelope(result);
+    assert.equal(envelope.ok, true);
+    assert.match(field(envelope.data, "commit"), /^[0-9a-f]{40}$/);
+    assert.ok(
+      envelope.warnings.some((warning) =>
+        String(warning).includes("could not record backup state"),
+      ),
+    );
+  });
+});
+
+describe("failure output", () => {
+  it("prints the affected path and recovery steps in human mode", async () => {
+    const sandbox = await newSandbox();
+    await git(sandbox.dir, ["config", "commit.gpgsign", "true"]);
+    await git(sandbox.dir, ["config", "gpg.program", "false"]);
+    const result = await cli(sandbox, ["create", "--input", "-"], draftInput());
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /COMMIT_FAILED/);
+    assert.match(result.stderr, /entries\/[0-9a-f-]{36}\.md/);
+    assert.match(result.stderr, /git -C/);
   });
 });
 
@@ -895,6 +969,23 @@ describe("usage errors", () => {
     const human = await cli(sandbox, ["delete"]);
     assert.equal(human.code, 2);
     assert.match(human.stderr, /unknown command/);
+  });
+
+  it("never echoes an unknown command or option, even when it looks like a secret", async () => {
+    const sandbox = await newSandbox();
+    const command = await cli(sandbox, [SECRET_KEY, "--json"]);
+    await expectError(command, "USAGE", 2);
+    const option = await cli(sandbox, ["status", `--${SECRET}`, "--json"]);
+    await expectError(option, "USAGE", 2);
+    const human = await cli(sandbox, [SECRET_KEY]);
+    assert.equal(human.code, 2);
+    assert.match(human.stderr, /unknown command/);
+    for (const result of [command, option, human]) {
+      assert.equal(result.stdout.includes(SECRET), false);
+      assert.equal(result.stderr.includes(SECRET), false);
+      assert.equal(result.stdout.includes(SECRET_KEY), false);
+      assert.equal(result.stderr.includes(SECRET_KEY), false);
+    }
   });
 
   it("exits 2 for missing arguments and options that do not apply", async () => {

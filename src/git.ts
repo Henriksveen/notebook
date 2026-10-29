@@ -169,34 +169,60 @@ async function upstreamRef(dir: string): Promise<string | undefined> {
 }
 
 export async function unpublishedCommits(dir: string): Promise<string[]> {
-  const upstream = await upstreamRef(dir);
-  const range = upstream ? `${upstream}..HEAD` : "HEAD";
+  const base = await publishedBase(dir);
+  const range = base ? `${base}..HEAD` : "HEAD";
   const result = await run(dir, ["rev-list", range]);
-  if (!result.ok) return [];
+  if (!result.ok) throw new Error("git rev-list failed");
   return result.stdout
     .toString("utf8")
     .split("\n")
     .filter((line) => line !== "");
 }
 
+async function publishedBase(dir: string): Promise<string | undefined> {
+  const branch = await text(dir, ["symbolic-ref", "--short", "-q", "HEAD"]);
+  if (!branch) return undefined;
+  return text(dir, [
+    "rev-parse",
+    "--verify",
+    "-q",
+    `refs/remotes/origin/${branch}`,
+  ]);
+}
+
 export async function changedNotebookFiles(
   dir: string,
   commit: string,
 ): Promise<string[]> {
-  const result = await run(dir, [
-    "diff-tree",
-    "--root",
-    "--no-commit-id",
-    "-r",
-    "--name-only",
-    "--diff-filter=AMR",
-    "-z",
-    commit,
-    "--",
-    "entries",
-    "attachments",
-  ]);
-  if (!result.ok) throw new Error("git diff-tree failed");
+  const parents = await text(dir, ["show", "-s", "--format=%P", commit]);
+  if (parents === undefined) throw new Error("git show failed");
+  const isMerge = parents.split(" ").filter((hash) => hash !== "").length > 1;
+  const result = isMerge
+    ? await run(dir, [
+        "ls-tree",
+        "-r",
+        "-z",
+        "--name-only",
+        commit,
+        "--",
+        "entries",
+        "attachments",
+      ])
+    : await run(dir, [
+        "diff-tree",
+        "--root",
+        "--no-commit-id",
+        "-r",
+        "--name-only",
+        "--no-renames",
+        "--diff-filter=AM",
+        "-z",
+        commit,
+        "--",
+        "entries",
+        "attachments",
+      ]);
+  if (!result.ok) throw new Error("git could not list notebook files");
   return splitNul(result.stdout);
 }
 
@@ -214,18 +240,35 @@ export async function push(
   dir: string,
   timeoutMs: number,
 ): Promise<PushOutcome> {
-  const upstream = await upstreamRef(dir);
   const branch = await text(dir, ["symbolic-ref", "--short", "-q", "HEAD"]);
-  if (!upstream && !branch) return { ok: false, reason: "push_failed" };
-  const args = upstream
-    ? ["push"]
-    : ["push", "--set-upstream", "origin", `HEAD:refs/heads/${branch}`];
+  if (!branch || (await isMirror(dir))) {
+    return { ok: false, reason: "push_failed" };
+  }
+  const args = [
+    "-c",
+    "push.followTags=false",
+    "push",
+    "--no-follow-tags",
+    "--no-force-with-lease",
+  ];
+  if ((await upstreamRef(dir)) === undefined) args.push("--set-upstream");
+  args.push("origin", `HEAD:refs/heads/${branch}`);
   const result = await runPush(dir, args, timeoutMs);
   if (result === "ok") return { ok: true };
   return {
     ok: false,
     reason: result === "timeout" ? "timeout" : "push_failed",
   };
+}
+
+async function isMirror(dir: string): Promise<boolean> {
+  const value = await text(dir, [
+    "config",
+    "--get",
+    "--type=bool",
+    "remote.origin.mirror",
+  ]);
+  return value === "true";
 }
 
 function runPush(

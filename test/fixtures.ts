@@ -38,6 +38,18 @@ export async function newNotebook(): Promise<string> {
   return dir;
 }
 
+export async function makeFailingRevListGit(): Promise<string> {
+  const { stdout } = await execFileAsync("sh", ["-c", "command -v git"]);
+  const real = stdout.trim();
+  const bin = await makeTempDir();
+  await writeFile(
+    join(bin, "git"),
+    `#!/bin/sh\nfor arg in "$@"; do\n  if [ "$arg" = "rev-list" ]; then\n    echo "simulated rev-list failure" >&2\n    exit 1\n  fi\ndone\nexec "${real}" "$@"\n`,
+    { mode: 0o755 },
+  );
+  return bin;
+}
+
 export async function makeBareRemote(): Promise<string> {
   const root = await makeTempDir();
   const bare = join(root, "remote.git");

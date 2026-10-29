@@ -5,10 +5,11 @@ import {
   mkdir,
   open,
   readdir,
+  readFile,
   realpath,
 } from "node:fs/promises";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
-import { attemptBackup, type BackupResult } from "./backup.ts";
+import { attemptBackup, type BackupResult, recordBackup } from "./backup.ts";
 import { DEFAULT_PORT, entryUrl } from "./config.ts";
 import { NotebookError } from "./errors.ts";
 import { type ParsedEntry, serializeEntry } from "./frontmatter.ts";
@@ -92,6 +93,8 @@ const README = `# Notebook
 Entries live in entries/ and attachments in attachments/. Change them through the notebook CLI, not by hand.
 `;
 const GITIGNORE = ".notebook/\n";
+const FORMAT_MARKER = ".notebook-format";
+const FORMAT_CONTENT = "notebook-format 1\n";
 const MEDIA_TYPES = new Map<string, string>([
   ["png", "image/png"],
   ["jpg", "image/jpeg"],
@@ -131,10 +134,23 @@ export async function initNotebook(
 }
 
 export async function isNotebook(root: string): Promise<boolean> {
-  const readme = await lstatOrNull(join(root, "README.md"));
-  if (!readme?.isFile()) return false;
   const top = await repoTopLevel(root);
-  return top !== undefined && (await realpath(top)) === (await realpath(root));
+  if (top === undefined || (await realpath(top)) !== (await realpath(root))) {
+    return false;
+  }
+  const marker = await regularFileText(join(root, FORMAT_MARKER));
+  const ignore = await regularFileText(join(root, ".gitignore"));
+  return (
+    marker === FORMAT_CONTENT &&
+    ignore !== undefined &&
+    ignore.split(/\r?\n/).includes(".notebook/")
+  );
+}
+
+async function regularFileText(path: string): Promise<string | undefined> {
+  const info = await lstatOrNull(path);
+  if (!info?.isFile()) return undefined;
+  return readFile(path, "utf8");
 }
 
 export async function assertNotebook(dir: string): Promise<void> {
@@ -158,7 +174,12 @@ async function createNotebook(root: string): Promise<void> {
   await initRepository(root);
   await atomicWrite(join(root, "README.md"), README, 0o644);
   await atomicWrite(join(root, ".gitignore"), GITIGNORE, 0o644);
-  await commitPaths(root, ["README.md", ".gitignore"], "notebook: init");
+  await atomicWrite(join(root, FORMAT_MARKER), FORMAT_CONTENT, 0o644);
+  await commitPaths(
+    root,
+    ["README.md", ".gitignore", FORMAT_MARKER],
+    "notebook: init",
+  );
 }
 
 async function assertCanCreate(root: string): Promise<void> {
@@ -263,13 +284,16 @@ export async function addAttachment(
 export async function retryBackup(
   dir: string,
   options: OperationOptions = {},
-): Promise<BackupResult> {
+): Promise<{ backup: BackupResult; warnings: string[] }> {
   await assertNotebook(dir);
   return withWriteLock(
     dir,
     async () => {
       await repoState(dir);
-      return attemptBackup(dir, { pushTimeoutMs: options.pushTimeoutMs });
+      const backup = await attemptBackup(dir, {
+        pushTimeoutMs: options.pushTimeoutMs,
+      });
+      return { backup, warnings: await recordBackup(dir, backup) };
     },
     { timeoutMs: options.lockTimeoutMs },
   );
@@ -341,6 +365,7 @@ async function commitTransaction(
   const backup = await attemptBackup(dir, {
     pushTimeoutMs: options.pushTimeoutMs,
   });
+  const backupWarnings = await recordBackup(dir, backup);
   return {
     id: entry.id,
     title: entry.title,
@@ -349,7 +374,7 @@ async function commitTransaction(
     revision,
     commit,
     backup,
-    warnings,
+    warnings: [...warnings, ...backupWarnings],
   };
 }
 

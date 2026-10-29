@@ -6,6 +6,7 @@ import {
   mkdir,
   readdir,
   readFile,
+  rm,
   symlink,
   truncate,
   writeFile,
@@ -88,6 +89,32 @@ describe("init", () => {
     await writeFile(join(dir, "stuff.txt"), "x");
     const error = await rejectionOf(initNotebook(dir));
     assert.equal(error.code, "NOT_A_NOTEBOOK");
+  });
+
+  it("refuses an ordinary git repository with a README.md and commits nothing", async () => {
+    const dir = await makeTempDir();
+    await git(dir, ["init", "-q", "-b", "main"]);
+    await writeFile(join(dir, "README.md"), "# Mine\n");
+    await git(dir, ["add", "--", "README.md"]);
+    await git(dir, ["commit", "-q", "-m", "mine"]);
+    const before = await commitCount(dir);
+    const initError = await rejectionOf(initNotebook(dir));
+    assert.equal(initError.code, "NOT_A_NOTEBOOK");
+    const createError = await rejectionOf(createEntry(dir, input()));
+    assert.equal(createError.code, "NOT_A_NOTEBOOK");
+    assert.equal(await commitCount(dir), before);
+  });
+
+  it("refuses a notebook whose format marker or .gitignore entry is missing", async () => {
+    const withoutMarker = await newNotebook();
+    await rm(join(withoutMarker, ".notebook-format"));
+    const markerError = await rejectionOf(createEntry(withoutMarker, input()));
+    assert.equal(markerError.code, "NOT_A_NOTEBOOK");
+
+    const withoutIgnore = await newNotebook();
+    await writeFile(join(withoutIgnore, ".gitignore"), "");
+    const ignoreError = await rejectionOf(createEntry(withoutIgnore, input()));
+    assert.equal(ignoreError.code, "NOT_A_NOTEBOOK");
   });
 
   it("is a no-op for an existing notebook and can add origin", async () => {

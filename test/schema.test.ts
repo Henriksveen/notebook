@@ -21,12 +21,12 @@ describe("entry validation", () => {
     assert.equal(result.ok, true);
   });
 
-  it("rejects unknown front matter keys", () => {
+  it("rejects unknown front matter keys without echoing them", () => {
     const result = validateEntry({ ...makeEntry(), surprise: true });
     assert.equal(result.ok, false);
     if (!result.ok)
       assert.deepEqual(result.errors, [
-        { field: "surprise", message: "is not a known field" },
+        { field: "<unknown field #13>", message: "is not a known field" },
       ]);
   });
 

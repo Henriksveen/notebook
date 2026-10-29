@@ -67,8 +67,9 @@ export async function openNotebook(options: OpenOptions): Promise<OpenResult> {
 async function inspect(
   port: number,
   fingerprint: string,
+  timeoutMs = PROBE_TIMEOUT_MS,
 ): Promise<"match" | "absent"> {
-  const probe = await probeHealth(port);
+  const probe = await probeHealth(port, timeoutMs);
   if (probe.state === "none") return "absent";
   if (probe.state === "notebook" && probe.fingerprint === fingerprint) {
     return "match";
@@ -83,7 +84,7 @@ function portInUse(port: number): NotebookError {
   );
 }
 
-function probeHealth(port: number): Promise<Probe> {
+function probeHealth(port: number, timeoutMs: number): Promise<Probe> {
   return new Promise((resolve) => {
     const request = httpGet(
       {
@@ -92,22 +93,26 @@ function probeHealth(port: number): Promise<Probe> {
         path: "/_health",
         headers: { Host: `127.0.0.1:${port}` },
         agent: false,
-        timeout: PROBE_TIMEOUT_MS,
       },
       (response) => {
         let body = "";
         response.setEncoding("utf8");
         response.on("data", (chunk: string) => {
           body += chunk;
-          if (body.length > MAX_HEALTH_BYTES) request.destroy();
+          if (body.length > MAX_HEALTH_BYTES) finish({ state: "other" });
         });
-        response.on("end", () => resolve(classify(response.statusCode, body)));
-        response.on("error", () => resolve({ state: "other" }));
+        response.on("end", () => finish(classify(response.statusCode, body)));
+        response.on("error", () => finish({ state: "other" }));
       },
     );
-    request.on("timeout", () => request.destroy());
+    const deadline = setTimeout(() => finish({ state: "other" }), timeoutMs);
+    const finish = (probe: Probe) => {
+      clearTimeout(deadline);
+      request.destroy();
+      resolve(probe);
+    };
     request.on("error", (error: NodeJS.ErrnoException) => {
-      resolve(
+      finish(
         error.code === "ECONNREFUSED" ? { state: "none" } : { state: "other" },
       );
     });
@@ -180,12 +185,16 @@ async function waitForServer(
 ): Promise<void> {
   const deadline = Date.now() + START_TIMEOUT_MS;
   while (Date.now() < deadline) {
-    if ((await inspect(port, fingerprint)) === "match") return;
+    const remaining = deadline - Date.now();
+    const probeMs = Math.min(PROBE_TIMEOUT_MS, remaining);
+    if ((await inspect(port, fingerprint, probeMs)) === "match") return;
     if (exited()) break;
     await new Promise((resolve) => setTimeout(resolve, POLL_MS));
   }
   if (exited()) {
-    if ((await probeHealth(port)).state === "other") throw portInUse(port);
+    if ((await probeHealth(port, PROBE_TIMEOUT_MS)).state === "other") {
+      throw portInUse(port);
+    }
   }
   throw new NotebookError(
     "INTERNAL",

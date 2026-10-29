@@ -38,12 +38,19 @@ export async function attemptBackup(
   dir: string,
   options: BackupOptions = {},
 ): Promise<BackupResult> {
-  const result = await evaluateBackup(
-    dir,
-    options.pushTimeoutMs ?? PUSH_TIMEOUT_MS,
-  );
-  await writeBackupState(dir, result);
-  return result;
+  return evaluateBackup(dir, options.pushTimeoutMs ?? PUSH_TIMEOUT_MS);
+}
+
+export async function recordBackup(
+  dir: string,
+  result: BackupResult,
+): Promise<string[]> {
+  try {
+    await writeBackupState(dir, result);
+    return [];
+  } catch {
+    return ["could not record backup state; the save is committed"];
+  }
 }
 
 async function evaluateBackup(

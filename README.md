@@ -62,7 +62,9 @@ notebook backup
 Use a private repository only; entries can contain personal notes. Pushes never prompt for
 credentials (`GIT_TERMINAL_PROMPT=0`, no askpass, 10 s timeout), so the remote must already work
 non-interactively, for example with an SSH key that needs no passphrase prompt or with a stored
-HTTPS credential.
+HTTPS credential. A push only sends the current branch to `refs/heads/<branch>` on `origin`, never
+forces, and ignores any extra `remote.origin.push` refspecs; a mirror remote (`remote.origin.mirror`)
+is not pushed to.
 
 You can also set the remote when creating the notebook: `notebook init --remote <url>`.
 
@@ -123,7 +125,7 @@ Global options (accepted by every command):
 
 | Command | Purpose |
 | --- | --- |
-| `init [--remote URL]` | Create the notebook (mode 0700, `git init -b main`, README, `.gitignore`, first commit). If it already exists, it is left in place and `--remote` only adds `origin` when none is set. |
+| `init [--remote URL]` | Create the notebook (mode 0700, `git init -b main`, README, `.gitignore`, `.notebook-format` marker, first commit). It refuses a non-empty directory that is not already a notebook, so an existing repository is never adopted. If the notebook already exists, it is left in place and `--remote` only adds `origin` when none is set. |
 | `create --input FILE\|-` | Save a new draft from JSON. |
 | `validate (--input FILE\|- \| ID)` | Check a payload or a saved entry without changing anything. |
 | `search [QUERY...] [--project X] [--topic X] [--type X] [--status X] [--include-archived] [--limit N] [--offset N]` | Search entries. Archived entries are excluded unless requested. |
@@ -301,6 +303,7 @@ each other: the second one gets `STALE_REVISION`.
 <notebook>/
   README.md
   .gitignore              # ".notebook/"
+  .notebook-format        # "notebook-format 1" marker; the CLI only works on notebooks that have it
   entries/<id>.md         # YAML front matter + Markdown body
   attachments/<id>/<attachment-id>.<ext>
   .notebook/              # ignored runtime state (write lock, backup state, website log)

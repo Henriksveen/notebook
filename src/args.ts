@@ -123,7 +123,7 @@ export function parseInvocation(argv: string[]): Invocation {
   if (values.help) return { kind: "help" };
   const [name, ...positionals] = parsed.positionals;
   if (name === undefined) throw usage("missing command");
-  if (!isCommand(name)) throw usage(`unknown command: ${sanitize(name)}`);
+  if (!isCommand(name)) throw usage("unknown command");
   checkOptions(name, values);
   checkPositionals(name, positionals);
   return { kind: "run", command: name, positionals, values };
@@ -144,20 +144,11 @@ function parseOptions(argv: string[]) {
 
 function describeParseError(error: unknown): string {
   const code = error instanceof Error && "code" in error ? error.code : "";
-  if (code === "ERR_PARSE_ARGS_UNKNOWN_OPTION") {
-    const match =
-      error instanceof Error ? /'(-[^'=]*)/.exec(error.message) : null;
-    const name = match ? sanitize(match[1] ?? "") : "";
-    return name ? `unknown option: ${name}` : "unknown option";
-  }
+  if (code === "ERR_PARSE_ARGS_UNKNOWN_OPTION") return "unknown option";
   if (code === "ERR_PARSE_ARGS_INVALID_OPTION_VALUE") {
     return "option value is missing or invalid";
   }
   return "invalid arguments";
-}
-
-function sanitize(value: string): string {
-  return /^-{0,2}[A-Za-z][A-Za-z0-9-]*$/.test(value) ? value : "(invalid)";
 }
 
 function isCommand(value: string): value is CommandName {

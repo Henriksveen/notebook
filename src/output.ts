@@ -27,7 +27,7 @@ export interface StatusData {
   repo_ok: boolean;
   head_commit: string | null;
   remote_configured: boolean;
-  unpublished_commits: number;
+  unpublished_commits: number | null;
   last_backup: BackupState | null;
 }
 
@@ -100,13 +100,20 @@ export function toFailure(error: unknown): Failure {
 export function failureText(failure: Failure): string {
   const lines = [`error: ${failure.message} (${failure.code})`];
   const details = failure.details;
-  if (
-    typeof details === "object" &&
-    details !== null &&
-    "current_revision" in details &&
-    typeof details.current_revision === "string"
-  ) {
-    lines.push(`Current revision: ${details.current_revision}`);
+  if (typeof details === "object" && details !== null) {
+    if (
+      "current_revision" in details &&
+      typeof details.current_revision === "string"
+    ) {
+      lines.push(`Current revision: ${details.current_revision}`);
+    }
+    if ("paths" in details && Array.isArray(details.paths)) {
+      lines.push("Affected paths:");
+      for (const path of details.paths) lines.push(`  ${String(path)}`);
+    }
+    if ("recovery" in details && typeof details.recovery === "string") {
+      lines.push(`Recovery: ${details.recovery}`);
+    }
   }
   if (failure.exitCode === 2) lines.push("Run notebook --help for usage.");
   return `${lines.join("\n")}\n`;
@@ -182,7 +189,7 @@ export function formatStatus(data: StatusData): string {
     `Repository: ${data.repo_ok ? "ok" : "not a notebook"}`,
     `Head: ${data.head_commit ?? "none"}`,
     `Remote: ${data.remote_configured ? "configured" : "not configured"}`,
-    `Unpublished commits: ${data.unpublished_commits}`,
+    `Unpublished commits: ${data.unpublished_commits ?? "unknown"}`,
   ];
   const last = data.last_backup;
   if (last === null) {

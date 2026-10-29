@@ -263,9 +263,13 @@ function checkKeys(
   errors: FieldError[],
   prefix: string,
 ): void {
-  for (const key of Object.keys(value)) {
+  for (const [index, key] of Object.keys(value).entries()) {
     if (!allowed.includes(key))
-      addError(errors, `${prefix}${key}`, "is not a known field");
+      addError(
+        errors,
+        `${prefix}<unknown field #${index + 1}>`,
+        "is not a known field",
+      );
   }
 }
 

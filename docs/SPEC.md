@@ -287,6 +287,17 @@ instructions.
 - Disallowed links/images keep their text/alt but lose `href`/`src`.
 - `npm test` runs with `--test-concurrency=4` to avoid git/process contention.
 
+## Accepted implementation decisions (review fixes)
+
+- `init` also writes `.notebook-format` (`notebook-format 1`) next to README and `.gitignore`. A notebook is a git top level with that marker and a `.gitignore` line `.notebook/`. A non-empty directory without the marker is refused with `NOT_A_NOTEBOOK` and never adopted.
+- Pushes use an explicit, non-forced refspec `HEAD:refs/heads/<branch>` with `--no-follow-tags`, so `remote.origin.push` refspecs and `push.followTags` are ignored. A mirror remote (`remote.origin.mirror=true`) is not pushed to (`push_failed`). A detached HEAD is refused.
+- The pre-push secret scan covers commits not reachable from `refs/remotes/origin/<branch>` (all commits when that ref is missing). Merge commits scan their whole `entries/` and `attachments/` trees. Any failure to enumerate commits or read blobs blocks the push.
+- A committed save never fails because backup state cannot be written: the result stays successful and carries the warning "could not record backup state". `status` reports `unpublished_commits: null` with a warning when commits cannot be listed.
+- Unknown field names, unknown commands, and unknown options are never echoed. Errors use fixed text, and unknown fields are reported as `<unknown field #N>`.
+- Credential assignments may span whitespace and newlines (up to 64 characters of separator whitespace on each side). URL-credential, JWT, and the other rules run in linear time on adversarial input.
+- A health probe gives up after 1 s of wall-clock time or 4 KiB of body. The `open` startup wait is bounded to 5 s.
+- Human-mode failures print the `paths` and `recovery` details (`COMMIT_FAILED`, `DIRTY_TARGET`).
+
 ## Install script
 
 `scripts/install.sh` — opt-in, run by the user. Links `~/.local/bin/notebook` → repo

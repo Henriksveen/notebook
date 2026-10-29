@@ -727,6 +727,37 @@ describe("open", () => {
     }
   });
 
+  it("does not wait on a listener that trickles bytes forever", {
+    timeout: 15_000,
+  }, async () => {
+    const sockets = new Set<Socket>();
+    const trickle = createNetServer((socket) => {
+      sockets.add(socket);
+      socket.on("error", () => undefined);
+      socket.on("close", () => {
+        sockets.delete(socket);
+        clearInterval(timer);
+      });
+      socket.write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n");
+      const timer = setInterval(() => socket.write(" "), 100);
+    });
+    await new Promise<void>((resolve) =>
+      trickle.listen(0, "127.0.0.1", resolve),
+    );
+    const { port } = trickle.address() as AddressInfo;
+    try {
+      const started = Date.now();
+      await assert.rejects(
+        openNotebook({ dir: await newNotebook(), port, noBrowser: true }),
+        { code: "PORT_IN_USE" },
+      );
+      assert.ok(Date.now() - started < 2500, "probe must give up quickly");
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => trickle.close(() => resolve()));
+    }
+  });
+
   it("reports opener failures as warnings, and passes the URL to the opener", async () => {
     const dir = await newNotebook();
     const port = await freePort();

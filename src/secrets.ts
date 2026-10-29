@@ -8,7 +8,12 @@ export interface SecretFinding {
 
 interface Rule {
   id: string;
-  matches: (line: string) => boolean;
+  lines: (text: string) => number[];
+}
+
+interface Hit {
+  rule: string;
+  line: number;
 }
 
 const PLACEHOLDERS = [
@@ -22,28 +27,137 @@ const PLACEHOLDERS = [
 ];
 
 const CREDENTIAL_ASSIGNMENT =
-  /(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret)["']?\s*[:=]\s*["']?([^\s"'`]{8,})/gi;
-const URL_CREDENTIALS =
-  /\b[a-z][a-z0-9+.-]*:\/\/([^\s/:@]+):([^\s/@]+)@[^\s/]/gi;
-
-function pattern(id: string, regex: RegExp): Rule {
-  return { id, matches: (line) => regex.test(line) };
-}
+  /(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret)["']?\s{0,64}[:=]\s{0,64}["']?([^\s"'`]{8,})/gi;
+const URL_SCHEME_WINDOW = 32;
+const URL_AUTHORITY_WINDOW = 512;
+const SCHEME_CHAR = /[A-Za-z0-9+.-]/;
+const WORD_CHAR = /\w/;
+const JWT_CHUNK = /[A-Za-z0-9_.-]+/g;
 
 function isPlaceholder(value: string): boolean {
   return PLACEHOLDERS.some((placeholder) => placeholder.test(value));
 }
 
-function hasCredentialAssignment(line: string): boolean {
-  return [...line.matchAll(CREDENTIAL_ASSIGNMENT)].some(
-    (match) => !isPlaceholder(match[1]),
-  );
+function lineRule(id: string, matches: (line: string) => boolean): Rule {
+  return {
+    id,
+    lines: (text) =>
+      text
+        .split(/\r?\n/)
+        .flatMap((line, index) => (matches(line) ? [index + 1] : [])),
+  };
 }
 
-function hasUrlCredentials(line: string): boolean {
-  return [...line.matchAll(URL_CREDENTIALS)].some(
-    (match) => !isPlaceholder(match[2]),
-  );
+function pattern(id: string, regex: RegExp): Rule {
+  return lineRule(id, (line) => regex.test(line));
+}
+
+function credentialLines(text: string): number[] {
+  const offsets: number[] = [];
+  for (const match of text.matchAll(CREDENTIAL_ASSIGNMENT)) {
+    if (!isPlaceholder(match[1] ?? "")) offsets.push(match.index);
+  }
+  return lineNumbers(text, offsets);
+}
+
+function urlCredentialLines(text: string): number[] {
+  const offsets: number[] = [];
+  for (
+    let at = text.indexOf("://");
+    at !== -1;
+    at = text.indexOf("://", at + 3)
+  ) {
+    if (hasUrlCredentialsAt(text, at)) offsets.push(at);
+  }
+  return lineNumbers(text, offsets);
+}
+
+function hasUrlCredentialsAt(text: string, at: number): boolean {
+  if (!hasSchemeBefore(text, at)) return false;
+  const start = at + 3;
+  const end = Math.min(text.length, start + URL_AUTHORITY_WINDOW);
+  let colon = -1;
+  for (let index = start; index < end; index += 1) {
+    const char = text[index] ?? "";
+    if (char === "@") {
+      return (
+        colon > start &&
+        index > colon + 1 &&
+        !isPlaceholder(text.slice(colon + 1, index)) &&
+        isHostStart(text[index + 1])
+      );
+    }
+    if (/[\s/?#]/.test(char)) return false;
+    if (char === ":" && colon === -1) colon = index;
+  }
+  return false;
+}
+
+function hasSchemeBefore(text: string, at: number): boolean {
+  let start = at;
+  while (
+    start > 0 &&
+    at - start < URL_SCHEME_WINDOW &&
+    SCHEME_CHAR.test(text[start - 1] ?? "")
+  ) {
+    start -= 1;
+  }
+  return start < at && /[A-Za-z]/.test(text[start] ?? "");
+}
+
+function isHostStart(char: string | undefined): boolean {
+  return char !== undefined && !/[\s/]/.test(char);
+}
+
+function hasJwt(line: string): boolean {
+  for (const chunk of line.matchAll(JWT_CHUNK)) {
+    const pieces = chunk[0].split(".");
+    for (let index = 0; index + 2 < pieces.length; index += 1) {
+      if (
+        pieces[index + 1] !== "" &&
+        pieces[index + 2] !== "" &&
+        startsJwtSegment(pieces[index] ?? "")
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function startsJwtSegment(segment: string): boolean {
+  for (
+    let at = segment.indexOf("eyJ");
+    at !== -1 && at + 3 < segment.length;
+    at = segment.indexOf("eyJ", at + 1)
+  ) {
+    if (at === 0 || !WORD_CHAR.test(segment[at - 1] ?? "")) return true;
+  }
+  return false;
+}
+
+function lineNumbers(text: string, offsets: number[]): number[] {
+  if (offsets.length === 0) return [];
+  const newlines: number[] = [];
+  for (
+    let at = text.indexOf("\n");
+    at !== -1;
+    at = text.indexOf("\n", at + 1)
+  ) {
+    newlines.push(at);
+  }
+  return offsets.map((offset) => countBelow(newlines, offset) + 1);
+}
+
+function countBelow(sorted: number[], value: number): number {
+  let low = 0;
+  let high = sorted.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if ((sorted[mid] ?? 0) < value) low = mid + 1;
+    else high = mid;
+  }
+  return low;
 }
 
 const RULES: Rule[] = [
@@ -58,26 +172,27 @@ const RULES: Rule[] = [
   pattern("openai-key", /\bsk-(?!ant-)[A-Za-z0-9_-]{20,}/),
   pattern("google-api-key", /\bAIza[0-9A-Za-z_-]{35}/),
   pattern("stripe-live-key", /\b(?:sk|rk)_live_[0-9A-Za-z]{16,}/),
-  pattern("jwt", /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/),
-  { id: "credential-assignment", matches: hasCredentialAssignment },
-  { id: "url-credentials", matches: hasUrlCredentials },
+  lineRule("jwt", hasJwt),
+  { id: "credential-assignment", lines: credentialLines },
+  { id: "url-credentials", lines: urlCredentialLines },
 ];
 
-function rulesMatching(line: string): string[] {
-  return RULES.filter((rule) => rule.matches(line)).map((rule) => rule.id);
+function hitsIn(text: string): Hit[] {
+  return RULES.flatMap((rule) =>
+    [...new Set(rule.lines(text))].map((line) => ({ rule: rule.id, line })),
+  ).sort((a, b) => a.line - b.line);
 }
 
 export function scanText(text: string, location: string): SecretFinding[] {
-  return text.split(/\r?\n/).flatMap((line, index) =>
-    rulesMatching(line).map((rule) => ({
-      rule,
-      location: `${location}:line ${index + 1}`,
-    })),
-  );
+  return hitsIn(text).map(({ rule, line }) => ({
+    rule,
+    location: `${location}:line ${line}`,
+  }));
 }
 
 function scanValue(value: string, location: string): SecretFinding[] {
-  return rulesMatching(value).map((rule) => ({ rule, location }));
+  const rules = [...new Set(hitsIn(value).map((hit) => hit.rule))];
+  return rules.map((rule) => ({ rule, location }));
 }
 
 export function scanEntry(entry: Entry, body: string): SecretFinding[] {
