@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
 import { attemptBackup, readBackupState } from "../src/backup.ts";
@@ -230,6 +230,48 @@ describe("attemptBackup", () => {
       reason: "secret_in_unpublished_commit",
     });
     assert.equal(await git(bare, ["rev-parse", "main"]), remoteBefore);
+  });
+
+  it("blocks a commit that changes a published symlink into a file containing a secret", async () => {
+    const dir = await newNotebook();
+    const bare = await makeBareRemote();
+    await initNotebook(dir, { remote: bare });
+    await mkdir(join(dir, "entries"), { recursive: true });
+    const path = join(dir, "entries", "typechange.md");
+    await symlink("../README.md", path);
+    await git(dir, ["add", "--", "entries/typechange.md"]);
+    await git(dir, ["commit", "-q", "-m", "symlink"]);
+    assert.deepEqual(await attemptBackup(dir), { status: "pushed" });
+    const remoteBefore = await git(bare, ["rev-parse", "main"]);
+
+    await rm(path);
+    await writeFile(path, `Key: ${SECRET_TOKEN}\n`);
+    await git(dir, ["add", "--", "entries/typechange.md"]);
+    await git(dir, ["commit", "-q", "-m", "typechange"]);
+
+    assert.deepEqual(await attemptBackup(dir), {
+      status: "blocked",
+      reason: "secret_in_unpublished_commit",
+    });
+    assert.equal(await git(bare, ["rev-parse", "main"]), remoteBefore);
+  });
+
+  it("pushes to the real branch when a tag has the same name", async () => {
+    const dir = await newNotebook();
+    const bare = await makeBareRemote();
+    await initNotebook(dir, { remote: bare });
+    await createEntry(dir, input());
+    await git(dir, ["tag", "main"]);
+
+    const created = await createEntry(dir, input());
+    assert.deepEqual(created.backup, { status: "pushed" });
+    assert.equal(
+      await git(bare, ["rev-parse", "refs/heads/main"]),
+      await git(dir, ["rev-parse", "HEAD"]),
+    );
+    await assert.rejects(
+      git(bare, ["rev-parse", "--verify", "-q", "refs/heads/heads/main"]),
+    );
   });
 
   it("blocks the backup when unpublished commits cannot be enumerated", async () => {

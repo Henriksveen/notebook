@@ -80,6 +80,13 @@ describe("scanText locations", () => {
     ]);
   });
 
+  it("detects URL credentials with a very long password", () => {
+    const url = `https://user:${"P4ssw0rd".repeat(70)}@host.example/`;
+    assert.deepEqual(scanText(`see ${url}`, "body"), [
+      { rule: "url-credentials", location: "body:line 1" },
+    ]);
+  });
+
   it("ignores placeholders split across lines", () => {
     assert.deepEqual(
       scanText(
@@ -120,6 +127,13 @@ describe("scanText performance", () => {
       assert.ok(performance.now() - started < 1000, `${name} is too slow`);
     });
   }
+
+  it("scans a 2 MiB URL authority without delimiters in under a second", () => {
+    const text = `https://${"a:".repeat(SIZE / 2)}`;
+    const started = performance.now();
+    scanText(text, "body");
+    assert.ok(performance.now() - started < 1000, "long authority is too slow");
+  });
 
   it("scans 2 MiB of random base64 in under a second", () => {
     const started = performance.now();

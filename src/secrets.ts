@@ -29,7 +29,6 @@ const PLACEHOLDERS = [
 const CREDENTIAL_ASSIGNMENT =
   /(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret)["']?\s{0,64}[:=]\s{0,64}["']?([^\s"'`]{8,})/gi;
 const URL_SCHEME_WINDOW = 32;
-const URL_AUTHORITY_WINDOW = 512;
 const SCHEME_CHAR = /[A-Za-z0-9+.-]/;
 const WORD_CHAR = /\w/;
 const JWT_CHUNK = /[A-Za-z0-9_.-]+/g;
@@ -62,35 +61,38 @@ function credentialLines(text: string): number[] {
 
 function urlCredentialLines(text: string): number[] {
   const offsets: number[] = [];
-  for (
-    let at = text.indexOf("://");
-    at !== -1;
-    at = text.indexOf("://", at + 3)
-  ) {
-    if (hasUrlCredentialsAt(text, at)) offsets.push(at);
+  let at = text.indexOf("://");
+  while (at !== -1) {
+    const scan = scanUrlAuthority(text, at);
+    if (scan.found) offsets.push(at);
+    at = text.indexOf("://", Math.max(at + 3, scan.stop));
   }
   return lineNumbers(text, offsets);
 }
 
-function hasUrlCredentialsAt(text: string, at: number): boolean {
-  if (!hasSchemeBefore(text, at)) return false;
+// Scans the authority after "://" up to its first delimiter. An authority never contains
+// "/", so it cannot contain another "://"; resuming at `stop` keeps the whole scan linear.
+function scanUrlAuthority(
+  text: string,
+  at: number,
+): { found: boolean; stop: number } {
   const start = at + 3;
-  const end = Math.min(text.length, start + URL_AUTHORITY_WINDOW);
+  if (!hasSchemeBefore(text, at)) return { found: false, stop: start };
   let colon = -1;
-  for (let index = start; index < end; index += 1) {
+  for (let index = start; index < text.length; index += 1) {
     const char = text[index] ?? "";
     if (char === "@") {
-      return (
+      const found =
         colon > start &&
         index > colon + 1 &&
         !isPlaceholder(text.slice(colon + 1, index)) &&
-        isHostStart(text[index + 1])
-      );
+        isHostStart(text[index + 1]);
+      return { found, stop: index };
     }
-    if (/[\s/?#]/.test(char)) return false;
+    if (/[\s/?#]/.test(char)) return { found: false, stop: index };
     if (char === ":" && colon === -1) colon = index;
   }
-  return false;
+  return { found: false, stop: text.length };
 }
 
 function hasSchemeBefore(text: string, at: number): boolean {

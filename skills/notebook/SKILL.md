@@ -169,7 +169,8 @@ After a save or change, reply briefly in plain words:
   - `pending`: "Saved locally; backup pending (<reason>)." Reasons: `no_remote` means no backup
     remote is configured, `push_failed` or `timeout` means the push did not complete.
   - `blocked`: "Saved locally; backup blocked (<reason>)." Reason
-    `secret_in_unpublished_commit` means a secret was found in unpublished history and it was not pushed.
+    `secret_in_unpublished_commit` means a possible secret was found in unpublished history, or
+    the history could not be checked, so nothing was pushed. Suggest `notebook status --json`.
 
 Also say that the URL needs the local viewer: it works only while `notebook open` (or
 `notebook serve`) is running. Run `notebook open --no-browser --json` if the user needs it live.

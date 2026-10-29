@@ -92,7 +92,7 @@ export async function repoState(dir: string): Promise<string> {
       "a merge, rebase, or cherry-pick is in progress; finish or abort it first",
     );
   }
-  const branch = await text(dir, ["symbolic-ref", "--short", "-q", "HEAD"]);
+  const branch = await currentBranch(dir);
   if (!branch) {
     throw new NotebookError(
       "REPO_STATE",
@@ -179,8 +179,15 @@ export async function unpublishedCommits(dir: string): Promise<string[]> {
     .filter((line) => line !== "");
 }
 
+export async function currentBranch(dir: string): Promise<string | undefined> {
+  const ref = await text(dir, ["symbolic-ref", "-q", "HEAD"]);
+  return ref?.startsWith("refs/heads/")
+    ? ref.slice("refs/heads/".length)
+    : undefined;
+}
+
 async function publishedBase(dir: string): Promise<string | undefined> {
-  const branch = await text(dir, ["symbolic-ref", "--short", "-q", "HEAD"]);
+  const branch = await currentBranch(dir);
   if (!branch) return undefined;
   return text(dir, [
     "rev-parse",
@@ -215,7 +222,7 @@ export async function changedNotebookFiles(
         "-r",
         "--name-only",
         "--no-renames",
-        "--diff-filter=AM",
+        "--diff-filter=AMT",
         "-z",
         commit,
         "--",
@@ -240,7 +247,7 @@ export async function push(
   dir: string,
   timeoutMs: number,
 ): Promise<PushOutcome> {
-  const branch = await text(dir, ["symbolic-ref", "--short", "-q", "HEAD"]);
+  const branch = await currentBranch(dir);
   if (!branch || (await isMirror(dir))) {
     return { ok: false, reason: "push_failed" };
   }
