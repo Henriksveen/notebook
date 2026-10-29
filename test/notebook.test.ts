@@ -11,7 +11,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_PORT, entryUrl } from "../src/config.ts";
 import { NotebookError } from "../src/errors.ts";
@@ -27,6 +27,7 @@ import {
 import { lstatOrNull } from "../src/paths.ts";
 import { readEntry } from "../src/store.ts";
 import {
+  cleanupTempDirs,
   commitCount,
   git,
   ID_1,
@@ -62,6 +63,8 @@ async function rejectionOf(promise: Promise<unknown>): Promise<NotebookError> {
 function entryPath(dir: string, id: string): string {
   return join(dir, "entries", `${id}.md`);
 }
+
+after(cleanupTempDirs);
 
 describe("init", () => {
   it("creates a notebook with README, .gitignore, and an initial commit", async () => {

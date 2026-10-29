@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import { DEFAULT_PORT, entryUrl, resolvePort } from "../src/config.ts";
 import {
   assertSafePath,
@@ -9,7 +9,9 @@ import {
   isValidId,
   resolveDataDir,
 } from "../src/paths.ts";
-import { ID_1, makeTempDir } from "./fixtures.ts";
+import { cleanupTempDirs, ID_1, makeTempDir } from "./fixtures.ts";
+
+after(cleanupTempDirs);
 
 describe("data directory resolution", () => {
   it("prefers the flag, then NOTEBOOK_DIR, then ~/notebook", () => {

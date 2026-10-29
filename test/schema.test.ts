@@ -114,13 +114,15 @@ describe("topic and type normalization", () => {
     ]);
   });
 
-  it("rejects invalid slugs and more than 20 topics", () => {
+  it("normalizes topic text and rejects unusable or too many topics", () => {
+    const normalized = validateEntryInput({
+      ...validInput,
+      topics: ["a_b", "A--B"],
+    });
+    assert.ok(normalized.ok);
+    assert.deepEqual(normalized.value.topics, ["a-b"]);
     assert.equal(
-      validateEntryInput({ ...validInput, topics: ["a_b"] }).ok,
-      false,
-    );
-    assert.equal(
-      validateEntryInput({ ...validInput, topics: ["a--b"] }).ok,
+      validateEntryInput({ ...validInput, topics: ["!!!"] }).ok,
       false,
     );
     assert.equal(
@@ -133,14 +135,17 @@ describe("topic and type normalization", () => {
 
   it("normalizes slugs with NFKC", () => {
     assert.equal(normalizeSlug("Ｂug-List"), "bug-list");
-    assert.equal(normalizeSlug("bad slug"), undefined);
+    assert.equal(normalizeSlug("Smoke Test"), "smoke-test");
+    assert.equal(normalizeSlug("  Café / Ops  "), "cafe-ops");
+    assert.equal(normalizeSlug("!!!"), undefined);
+    assert.equal(normalizeSlug("x".repeat(51)), undefined);
   });
 
-  it("requires a type slug", () => {
-    assert.equal(
-      validateEntryInput({ ...validInput, type: "How To" }).ok,
-      false,
-    );
+  it("normalizes the type to a slug", () => {
+    const normalized = validateEntryInput({ ...validInput, type: "How To" });
+    assert.ok(normalized.ok);
+    assert.equal(normalized.value.type, "how-to");
+    assert.equal(validateEntryInput({ ...validInput, type: "---" }).ok, false);
     assert.equal(
       validateEntryInput({ ...validInput, type: "how-to" }).ok,
       true,

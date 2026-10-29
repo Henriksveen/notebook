@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -62,8 +62,19 @@ export function makeEntry(overrides: Partial<Entry> = {}): Entry {
   };
 }
 
+const tempDirs: string[] = [];
+
 export async function makeTempDir(): Promise<string> {
-  return mkdtemp(join(tmpdir(), "notebook-test-"));
+  const dir = await mkdtemp(join(tmpdir(), "notebook-test-"));
+  tempDirs.push(dir);
+  return dir;
+}
+
+export async function cleanupTempDirs(): Promise<void> {
+  const dirs = tempDirs.splice(0);
+  await Promise.all(
+    dirs.map((dir) => rm(dir, { recursive: true, force: true })),
+  );
 }
 
 export async function writeEntryFile(

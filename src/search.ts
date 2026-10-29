@@ -1,6 +1,11 @@
 import { DEFAULT_PORT, entryUrl } from "./config.ts";
 import { NotebookError } from "./errors.ts";
-import { type Entry, normalizeText, type Status } from "./schema.ts";
+import {
+  type Entry,
+  normalizeSlug,
+  normalizeText,
+  type Status,
+} from "./schema.ts";
 import { type LoadWarning, listEntries } from "./store.ts";
 
 const DEFAULT_LIMIT = 20;
@@ -104,10 +109,10 @@ function matchesFilters(entry: Entry, options: SearchOptions): boolean {
     return false;
   if (
     options.topic !== undefined &&
-    !entry.topics.includes(normalizeText(options.topic))
+    !entry.topics.includes(normalizeSlug(options.topic) ?? "")
   )
     return false;
-  if (options.type !== undefined && entry.type !== normalizeText(options.type))
+  if (options.type !== undefined && entry.type !== normalizeSlug(options.type))
     return false;
   return true;
 }

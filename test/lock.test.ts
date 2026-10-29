@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { withWriteLock } from "../src/lock.ts";
-import { makeTempDir } from "./fixtures.ts";
+import { cleanupTempDirs, makeTempDir } from "./fixtures.ts";
 
 const CHILD = fileURLToPath(
   new URL("./helpers/lock-child.ts", import.meta.url),
@@ -22,6 +22,8 @@ function runChild(dir: string, log: string, holdMs: number): Promise<void> {
     );
   });
 }
+
+after(cleanupTempDirs);
 
 describe("write lock", () => {
   it("serializes two concurrent processes", async () => {

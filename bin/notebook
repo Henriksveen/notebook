@@ -1,0 +1,28 @@
+#!/bin/sh
+# Runs the notebook CLI from this checkout, following symlinks to find it.
+set -eu
+
+fail() {
+  printf 'notebook: %s\n' "$1" >&2
+  exit 1
+}
+
+command -v node >/dev/null 2>&1 ||
+  fail "node (version 24 or newer) is required but was not found on PATH"
+
+case $0 in
+  */*) src=$0 ;;
+  *) src=$(command -v "$0") || fail "cannot locate the launcher" ;;
+esac
+
+while [ -L "$src" ]; do
+  target=$(readlink "$src") || fail "cannot read symlink $src"
+  case $target in
+    /*) src=$target ;;
+    *) src=$(dirname -- "$src")/$target ;;
+  esac
+done
+
+root=$(cd -P -- "$(dirname -- "$src")/.." && pwd -P) ||
+  fail "cannot resolve the notebook checkout"
+exec node "$root/src/cli.ts" "$@"

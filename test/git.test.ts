@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import {
   commitPaths,
   dirtyPaths,
@@ -10,7 +10,9 @@ import {
   repoState,
   unpublishedCommits,
 } from "../src/git.ts";
-import { git, makeTempDir, newNotebook } from "./fixtures.ts";
+import { cleanupTempDirs, git, makeTempDir, newNotebook } from "./fixtures.ts";
+
+after(cleanupTempDirs);
 
 describe("repoState", () => {
   it("returns the branch for a healthy notebook", async () => {

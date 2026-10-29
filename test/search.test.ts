@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import type { Entry } from "../src/schema.ts";
 import {
   type SearchDocument,
   searchEntries,
   searchNotebook,
 } from "../src/search.ts";
-import { makeEntry, makeTempDir, writeEntryFile } from "./fixtures.ts";
+import {
+  cleanupTempDirs,
+  makeEntry,
+  makeTempDir,
+  writeEntryFile,
+} from "./fixtures.ts";
 
 const id = (n: number) =>
   `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -20,6 +25,8 @@ function doc(
 }
 
 const idsOf = (hits: { id: string }[]) => hits.map((hit) => hit.id);
+
+after(cleanupTempDirs);
 
 describe("search semantics", () => {
   const corpus = [

@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import { attemptBackup, readBackupState } from "../src/backup.ts";
 import { createEntry, initNotebook } from "../src/notebook.ts";
 import {
+  cleanupTempDirs,
   git,
   ID_1,
   makeBareRemote,
@@ -22,6 +23,8 @@ function input() {
     body: "Body.\n",
   };
 }
+
+after(cleanupTempDirs);
 
 describe("attemptBackup", () => {
   it("reports pending/no_remote when origin is not configured", async () => {

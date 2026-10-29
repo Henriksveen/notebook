@@ -150,7 +150,13 @@ export function normalizeText(value: string): string {
 }
 
 export function normalizeSlug(value: string): string | undefined {
-  const slug = normalizeText(value).trim();
+  const slug = value
+    .normalize("NFKD")
+    .replace(/\p{M}+/gu, "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
   return slug.length <= MAX_SLUG_LENGTH && SLUG.test(slug) ? slug : undefined;
 }
 

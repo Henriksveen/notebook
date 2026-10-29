@@ -137,7 +137,7 @@ export async function isNotebook(root: string): Promise<boolean> {
   return top !== undefined && (await realpath(top)) === (await realpath(root));
 }
 
-async function assertNotebook(dir: string): Promise<void> {
+export async function assertNotebook(dir: string): Promise<void> {
   if (!(await isNotebook(dir))) {
     throw new NotebookError(
       "NOT_A_NOTEBOOK",

@@ -267,6 +267,17 @@ instructions.
 - `git push` runs in its own process group with stdio ignored and `GIT_SSH_COMMAND` defaulting to
   `ssh -o BatchMode=yes`; on timeout the whole group is killed.
 
+## Accepted implementation decisions (Task 3)
+
+- Topic and type inputs are normalized (diacritics stripped, lowercase, non-alphanumeric runs →
+  `-`, trimmed); only values that normalize to an empty or over-long slug are rejected. Search
+  topic/type filters use the same normalization.
+- `read`, `search`, and `validate ID` fail with `NOT_A_NOTEBOOK` if the directory is not a
+  notebook. `status` stays diagnostic (`repo_ok: false`) instead of failing.
+- `backup` returns `data: {}` with the result in the top-level `backup` field.
+- `validate` also runs the secret scan.
+- Argument-parse errors use fixed messages (Node's raw messages may echo values).
+
 ## Install script
 
 `scripts/install.sh` — opt-in, run by the user. Links `~/.local/bin/notebook` → repo

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { after, describe, it } from "node:test";
 import {
   applyUpdate,
   buildNewEntry,
@@ -10,6 +10,7 @@ import {
   readEntry,
 } from "../src/store.ts";
 import {
+  cleanupTempDirs,
   ID_1,
   ID_2,
   ID_3,
@@ -18,6 +19,8 @@ import {
   STAMP,
   writeEntryFile,
 } from "./fixtures.ts";
+
+after(cleanupTempDirs);
 
 describe("listing", () => {
   it("returns an empty list when there are no entries", async () => {
