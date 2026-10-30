@@ -142,6 +142,35 @@ export function errorPage(): string {
   );
 }
 
+export function reportViewerPage(
+  entryId: string,
+  attachmentId: string,
+  filename: string,
+  entryTitle: string,
+): string {
+  const name = escapeHtml(filename);
+  const base = `/attachments/${escapeHtml(entryId)}/${escapeHtml(attachmentId)}`;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${name} | Notebook</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="report-viewer">
+<header class="report-toolbar">
+<a class="brand" href="/">Notebook</a>
+<span class="report-name">${name}</span>
+<a href="/entries/${escapeHtml(entryId)}" title="${escapeHtml(entryTitle)}">Back to entry</a>
+<a href="${base}">Download HTML</a>
+</header>
+<main class="report-main"><iframe src="${base}/content" sandbox="allow-scripts" referrerpolicy="no-referrer" title="Report: ${name}"></iframe></main>
+</body>
+</html>
+`;
+}
+
 function countLine(total: number): string {
   return `<p class="count">${total} ${total === 1 ? "entry" : "entries"}</p>`;
 }
@@ -219,10 +248,14 @@ function attachmentsSection(
 ): string {
   if (attachments.length === 0) return "";
   const items = attachments
-    .map(
-      (attachment) =>
-        `<li><a href="${escapeHtml(`/attachments/${entryId}/${attachment.id}`)}">${escapeHtml(attachment.filename)}</a> <span class="meta">${escapeHtml(attachment.media_type)}, ${formatSize(attachment.size)}</span></li>`,
-    )
+    .map((attachment) => {
+      const base = `/attachments/${entryId}/${attachment.id}`;
+      const view =
+        attachment.media_type === "text/html"
+          ? ` <a class="view-page" href="${escapeHtml(`${base}/view`)}">View page</a>`
+          : "";
+      return `<li><a href="${escapeHtml(base)}">${escapeHtml(attachment.filename)}</a> <span class="meta">${escapeHtml(attachment.media_type)}, ${formatSize(attachment.size)}</span>${view}</li>`;
+    })
     .join("\n");
   return `<section class="attachments">\n<h2>Attachments</h2>\n<ul>\n${items}\n</ul>\n</section>\n`;
 }

@@ -38,6 +38,7 @@ const ATT_PNG = "11111111-2222-4333-8444-555555555555";
 const ATT_HTML = "66666666-7777-4888-8999-aaaaaaaaaaaa";
 const ATT_SVG = "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff";
 const ATT_PDF = "12345678-1234-4234-8234-123456789abc";
+const ATT_TRICKY = "cafecafe-cafe-4afe-8afe-cafecafecafe";
 const UNLISTED = "00000000-0000-4000-8000-000000000001";
 const ARCHIVED = "0a1b2c3d-4e5f-4a6b-8c7d-8e9f0a1b2c3d";
 const BROKEN = "12345678-9abc-4def-8123-456789abcdef";
@@ -124,6 +125,9 @@ async function writeAttachment(
 const TEXT_BYTES = Buffer.from("<html><script>alert(1)</script></html>");
 const SVG_BYTES = Buffer.from("<svg onload='alert(1)'></svg>");
 const PDF_BYTES = Buffer.from("%PDF-1.4 fake");
+const REPORT_BYTES = Buffer.from(
+  "<!DOCTYPE html><html><body><h1>Quarterly report</h1><p>REPORT-BODY-MARKER</p></body></html>",
+);
 
 async function fixtureNotebook(): Promise<string> {
   const dir = await makeTempDir();
@@ -181,6 +185,13 @@ async function fixtureNotebook(): Promise<string> {
           "application/pdf",
           PDF_BYTES,
         ),
+        attachmentRecord(
+          ATT_TRICKY,
+          'a<b>&"c.html',
+          `${ATT_TRICKY}.html`,
+          "text/html",
+          REPORT_BYTES,
+        ),
       ],
     }),
     [
@@ -202,6 +213,7 @@ async function fixtureNotebook(): Promise<string> {
   await writeAttachment(dir, ID_1, `${ATT_HTML}.html`, TEXT_BYTES);
   await writeAttachment(dir, ID_1, `${ATT_SVG}.svg`, SVG_BYTES);
   await writeAttachment(dir, ID_1, `${ATT_PDF}.pdf`, PDF_BYTES);
+  await writeAttachment(dir, ID_1, `${ATT_TRICKY}.html`, REPORT_BYTES);
   await writeAttachment(dir, ID_1, `${UNLISTED}.txt`, Buffer.from("secret"));
   await writeEntryFile(
     dir,
@@ -646,10 +658,303 @@ describe("website", () => {
     });
   });
 
+  describe("html reports", () => {
+    const CONTENT_CSP =
+      "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+    const VIEWER_CSP =
+      "default-src 'none'; style-src 'self'; img-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+    const contentPath = `/attachments/${ID_1}/${ATT_HTML}/content`;
+    const viewPath = `/attachments/${ID_1}/${ATT_HTML}/view`;
+
+    it("serves the raw html with a sandboxed content policy", async () => {
+      const reply = await request(server.port, contentPath);
+      assert.equal(reply.status, 200);
+      assert.equal(reply.headers["content-type"], "text/html; charset=utf-8");
+      assert.equal(reply.body, TEXT_BYTES.toString("utf8"));
+      assert.equal(reply.headers["content-security-policy"], CONTENT_CSP);
+      assert.equal(reply.headers["x-frame-options"], "SAMEORIGIN");
+      assert.equal(
+        reply.headers["content-disposition"],
+        `inline; filename="page.html"; filename*=UTF-8''page.html`,
+      );
+      assert.equal(reply.headers["x-content-type-options"], "nosniff");
+      assert.equal(reply.headers["referrer-policy"], "no-referrer");
+      assert.equal(reply.headers["cache-control"], "no-store");
+    });
+
+    it("answers HEAD on the content route with headers and no body", async () => {
+      const reply = await request(server.port, contentPath, { method: "HEAD" });
+      assert.equal(reply.status, 200);
+      assert.equal(reply.body, "");
+      assert.equal(reply.headers["content-type"], "text/html; charset=utf-8");
+      assert.equal(reply.headers["content-security-policy"], CONTENT_CSP);
+      assert.equal(reply.headers["x-frame-options"], "SAMEORIGIN");
+      assert.equal(
+        Number(reply.headers["content-length"]),
+        TEXT_BYTES.byteLength,
+      );
+    });
+
+    it("renders a standalone viewer that frames the report", async () => {
+      const reply = await request(server.port, viewPath);
+      assert.equal(reply.status, 200);
+      assert.equal(reply.headers["content-type"], "text/html; charset=utf-8");
+      assert.equal(reply.headers["content-security-policy"], VIEWER_CSP);
+      assert.equal(reply.headers["x-frame-options"], "DENY");
+      assert.ok(reply.body.startsWith("<!DOCTYPE html>"));
+      assert.ok(reply.body.includes('<body class="report-viewer">'));
+      assert.ok(
+        reply.body.includes(
+          `<iframe src="/attachments/${ID_1}/${ATT_HTML}/content" sandbox="allow-scripts" referrerpolicy="no-referrer" title="Report: page.html"></iframe>`,
+        ),
+      );
+      assert.equal(reply.body.includes("allow-same-origin"), false);
+      assert.ok(reply.body.includes(`href="/entries/${ID_1}"`));
+      assert.ok(reply.body.includes("Back to entry"));
+      assert.ok(reply.body.includes(`href="/attachments/${ID_1}/${ATT_HTML}"`));
+      assert.ok(reply.body.includes("Download HTML"));
+      assert.equal(reply.body.includes("<script"), false);
+      assert.equal(reply.body.includes("<html><script>alert(1)"), false);
+    });
+
+    it("does not include the report bytes in the viewer", async () => {
+      const content = await request(
+        server.port,
+        `/attachments/${ID_1}/${ATT_TRICKY}/content`,
+      );
+      assert.ok(content.body.includes("REPORT-BODY-MARKER"));
+      const viewer = await request(
+        server.port,
+        `/attachments/${ID_1}/${ATT_TRICKY}/view`,
+      );
+      assert.equal(viewer.status, 200);
+      assert.equal(viewer.body.includes("REPORT-BODY-MARKER"), false);
+    });
+
+    it("escapes the filename in the viewer", async () => {
+      const reply = await request(
+        server.port,
+        `/attachments/${ID_1}/${ATT_TRICKY}/view`,
+      );
+      assert.equal(reply.status, 200);
+      assert.ok(reply.body.includes("a&lt;b&gt;&amp;&quot;c.html"));
+      assert.equal(reply.body.includes('a<b>&"c.html'), false);
+      assert.ok(
+        reply.body.includes(
+          "<title>a&lt;b&gt;&amp;&quot;c.html | Notebook</title>",
+        ),
+      );
+    });
+
+    it("404s on the report routes for attachments that are not html", async () => {
+      for (const suffix of ["content", "view"]) {
+        const reply = await request(
+          server.port,
+          `/attachments/${ID_1}/${ATT_PNG}/${suffix}`,
+        );
+        assert.equal(reply.status, 404, suffix);
+        assertSecurityHeaders(reply);
+      }
+    });
+
+    it("404s on the report routes for unknown, malformed and foreign attachments", async () => {
+      const paths = [
+        `/attachments/${ID_1}/${MISSING}/content`,
+        `/attachments/${ID_1}/${MISSING}/view`,
+        `/attachments/${ID_1}/${UNLISTED}/content`,
+        `/attachments/nope/${ATT_HTML}/content`,
+        `/attachments/${ID_1}/nope/view`,
+        `/attachments/${ID_2}/${ATT_HTML}/content`,
+        `/attachments/${ID_2}/${ATT_HTML}/view`,
+        `/attachments/${ID_1}/${ATT_HTML}/content/`,
+      ];
+      for (const path of paths) {
+        const reply = await request(server.port, path);
+        assert.equal(reply.status, 404, path);
+        assertSecurityHeaders(reply);
+      }
+    });
+
+    it("keeps the download route as an octet-stream attachment", async () => {
+      const reply = await request(
+        server.port,
+        `/attachments/${ID_1}/${ATT_HTML}`,
+      );
+      assert.equal(reply.headers["content-type"], "application/octet-stream");
+      assert.ok(
+        String(reply.headers["content-disposition"]).startsWith("attachment;"),
+      );
+      assert.equal(
+        reply.headers["content-security-policy"],
+        SECURITY_HEADERS["content-security-policy"],
+      );
+    });
+
+    it("links html attachments from the entry page without embedding them", async () => {
+      const reply = await request(server.port, `/entries/${ID_1}`);
+      assert.equal(reply.status, 200);
+      assert.ok(
+        reply.body.includes(
+          `<a class="view-page" href="/attachments/${ID_1}/${ATT_HTML}/view">View page</a>`,
+        ),
+      );
+      assert.ok(reply.body.includes(`href="/attachments/${ID_1}/${ATT_HTML}"`));
+      assert.equal(reply.body.includes("<iframe"), false);
+      assert.equal(reply.body.includes("REPORT-BODY-MARKER"), false);
+    });
+  });
+
   it("reports PORT_IN_USE when the port is taken", async () => {
     await assert.rejects(createServer({ dir, port: server.port }), {
       code: "PORT_IN_USE",
     });
+  });
+});
+
+describe("report safety", () => {
+  const OK_HTML = "22222222-3333-4444-8555-666666666666";
+  const GONE_HTML = "33333333-4444-4555-8666-777777777777";
+  const LINK_HTML = "44444444-5555-4666-8777-888888888888";
+  const DIR_HTML = "55555555-6666-4777-8888-999999999999";
+  const OLD_ENTRY = "88888888-9999-4aaa-8bbb-cccccccccccc";
+  const OLD_HTML = "77777777-8888-4999-8aaa-bbbbbbbbbbbb";
+  const PLAIN_PNG = "99999999-aaaa-4bbb-8ccc-dddddddddddd";
+  const OUTSIDE = "OUTSIDE-REPORT-MARKER";
+  let dir: string;
+  let server: WebServer;
+
+  before(async () => {
+    dir = await makeTempDir();
+    await writeEntryFile(
+      dir,
+      makeEntry({
+        id: ID_1,
+        title: "Reports",
+        attachments: [
+          attachmentRecord(
+            OK_HTML,
+            "ok.html",
+            `${OK_HTML}.html`,
+            "text/html",
+            REPORT_BYTES,
+          ),
+          attachmentRecord(
+            GONE_HTML,
+            "gone.html",
+            `${GONE_HTML}.html`,
+            "text/html",
+            REPORT_BYTES,
+          ),
+          attachmentRecord(
+            LINK_HTML,
+            "link.html",
+            `${LINK_HTML}.html`,
+            "text/html",
+            REPORT_BYTES,
+          ),
+          attachmentRecord(
+            DIR_HTML,
+            "dir.html",
+            `${DIR_HTML}.html`,
+            "text/html",
+            REPORT_BYTES,
+          ),
+        ],
+      }),
+    );
+    await writeEntryFile(
+      dir,
+      makeEntry({
+        id: OLD_ENTRY,
+        title: "Old report",
+        status: "archived",
+        archived_from: "draft",
+        attachments: [
+          attachmentRecord(
+            OLD_HTML,
+            "old.html",
+            `${OLD_HTML}.html`,
+            "text/html",
+            REPORT_BYTES,
+          ),
+        ],
+      }),
+    );
+    await writeEntryFile(
+      dir,
+      makeEntry({
+        id: ID_2,
+        title: "Plain pictures",
+        attachments: [
+          attachmentRecord(
+            PLAIN_PNG,
+            "pixel.png",
+            `${PLAIN_PNG}.png`,
+            "image/png",
+            PNG_BYTES,
+          ),
+        ],
+      }),
+      "Pictures only.\n",
+    );
+    await writeAttachment(dir, ID_1, `${OK_HTML}.html`, REPORT_BYTES);
+    const outside = join(await makeTempDir(), "outside.html");
+    await writeFile(outside, OUTSIDE);
+    await symlink(outside, join(dir, "attachments", ID_1, `${LINK_HTML}.html`));
+    await mkdir(join(dir, "attachments", ID_1, `${DIR_HTML}.html`), {
+      recursive: true,
+    });
+    await writeAttachment(dir, OLD_ENTRY, `${OLD_HTML}.html`, REPORT_BYTES);
+    await writeAttachment(dir, ID_2, `${PLAIN_PNG}.png`, PNG_BYTES);
+    server = await createServer({ dir, port: 0 });
+  });
+
+  after(async () => {
+    await server.close();
+  });
+
+  it("404s for listed reports whose file is missing, a symlink or a directory", async () => {
+    for (const id of [GONE_HTML, LINK_HTML, DIR_HTML]) {
+      for (const suffix of ["view", "content"]) {
+        const reply = await request(
+          server.port,
+          `/attachments/${ID_1}/${id}/${suffix}`,
+        );
+        assert.equal(reply.status, 404, `${suffix} ${id}`);
+        assert.equal(reply.body.includes(OUTSIDE), false);
+        assertSecurityHeaders(reply);
+      }
+    }
+  });
+
+  it("serves reports of archived entries", async () => {
+    for (const suffix of ["view", "content"]) {
+      const reply = await request(
+        server.port,
+        `/attachments/${OLD_ENTRY}/${OLD_HTML}/${suffix}`,
+      );
+      assert.equal(reply.status, 200, suffix);
+    }
+  });
+
+  it("applies the host and method rules to the viewer route", async () => {
+    const path = `/attachments/${ID_1}/${OK_HTML}/view`;
+    const foreign = await request(server.port, path, { host: "evil.example" });
+    assert.equal(foreign.status, 421);
+    assertSecurityHeaders(foreign);
+    const post = await request(server.port, path, { method: "POST" });
+    assert.equal(post.status, 405);
+    assert.equal(post.headers.allow, "GET, HEAD");
+    assertSecurityHeaders(post);
+  });
+
+  it("shows no view link on entries whose attachments are not html", async () => {
+    const reply = await request(server.port, `/entries/${ID_2}`);
+    assert.equal(reply.status, 200);
+    assert.ok(reply.body.includes(`/attachments/${ID_2}/${PLAIN_PNG}`));
+    assert.equal(reply.body.includes("View page"), false);
+    assert.equal(reply.body.includes("/view"), false);
+    assert.equal(reply.body.includes("<iframe"), false);
   });
 });
 

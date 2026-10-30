@@ -25,6 +25,11 @@ const PNG_BYTES = Buffer.from(
 );
 const CSP =
   "default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+const REPORT_CSP =
+  "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+const VIEWER_CSP =
+  "default-src 'none'; style-src 'self'; img-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const REPORT_HTML = "<h1>Report</h1>\n";
 const SECRET = `ghp_${"Qz9".repeat(12)}`;
 
 interface World {
@@ -337,6 +342,41 @@ async function assertNoSecretAnywhere(w: World): Promise<void> {
   }
 }
 
+async function assertReportRoutes(
+  w: World,
+  id: string,
+  attachmentId: string,
+  expected: string,
+): Promise<void> {
+  const viewer = await http(
+    w,
+    "GET",
+    `/attachments/${id}/${attachmentId}/view`,
+  );
+  assert.equal(viewer.status, 200, "viewer status");
+  assert.equal(viewer.headers["content-type"], "text/html; charset=utf-8");
+  assert.equal(viewer.headers["content-security-policy"], VIEWER_CSP);
+  assert.ok(
+    viewer.body
+      .toString("utf8")
+      .includes(
+        `<iframe src="/attachments/${id}/${attachmentId}/content" sandbox="allow-scripts"`,
+      ),
+    "viewer frames the content route in a sandbox",
+  );
+
+  const content = await http(
+    w,
+    "GET",
+    `/attachments/${id}/${attachmentId}/content`,
+  );
+  assert.equal(content.status, 200, "content status");
+  assert.equal(content.headers["content-type"], "text/html; charset=utf-8");
+  assert.equal(content.body.toString("utf8"), expected);
+  assert.equal(content.headers["content-security-policy"], REPORT_CSP);
+  assert.equal(content.headers["x-frame-options"], "SAMEORIGIN");
+}
+
 async function setup(): Promise<World> {
   const root = await mkdtemp(join(tmpdir(), "notebook-e2e-"));
   const home = join(root, "home");
@@ -508,7 +548,7 @@ async function run(w: World): Promise<void> {
     "attach a PNG and an HTML file, then reference them in the body",
     async () => {
       await writeFile(join(w.root, "pixel.png"), PNG_BYTES);
-      await writeFile(join(w.root, "report.html"), "<h1>Report</h1>\n");
+      await writeFile(join(w.root, "report.html"), REPORT_HTML);
       const png = await call<Mutation>(w, [
         "attach",
         id,
@@ -805,6 +845,18 @@ async function run(w: World): Promise<void> {
       assert.equal(html.status, 200);
       assert.equal(html.headers["content-type"], "application/octet-stream");
       assert.match(String(html.headers["content-disposition"]), /^attachment;/);
+      assert.ok(
+        pageHtml.includes(
+          `<a class="view-page" href="/attachments/${id}/${htmlId}/view">View page</a>`,
+        ),
+        "the HTML report has a View page link",
+      );
+      await assertReportRoutes(w, id, htmlId, REPORT_HTML);
+      assert.equal(
+        (await http(w, "GET", `/attachments/${id}/${pngId}/view`)).status,
+        404,
+        "the PNG has no viewer",
+      );
 
       assert.equal(
         (await http(w, "GET", "/", { Host: "evil.example" })).status,
@@ -815,6 +867,45 @@ async function run(w: World): Promise<void> {
         200,
       );
       assert.equal((await http(w, "POST", "/")).status, 405);
+    },
+  );
+
+  await step(
+    "a regenerated report is a new attachment and both stay viewable",
+    async () => {
+      const second = "<h1>Report two</h1>\n";
+      await writeFile(join(w.root, "report-2.html"), second);
+      const attached = await call<Mutation>(w, [
+        "attach",
+        id,
+        "--expected-revision",
+        revision,
+        "--file",
+        join(w.root, "report-2.html"),
+        "--name",
+        "report-2.html",
+      ]);
+      revision = okData(attached, "attach second html").revision;
+
+      const current = okData(await call<Read>(w, ["read", id]), "read");
+      const reports = current.attachments.filter(
+        (attachment) => attachment.media_type === "text/html",
+      );
+      assert.equal(reports.length, 2, "both HTML reports are listed");
+      const newer = reports.find(
+        (attachment) => attachment.filename === "report-2.html",
+      );
+      assert.ok(newer, "the second report is listed");
+      assert.notEqual(newer.id, htmlId);
+
+      const page = await http(w, "GET", `/entries/${id}`);
+      const pageHtml = page.body.toString("utf8");
+      assert.ok(
+        pageHtml.includes(`href="/attachments/${id}/${newer.id}/view"`),
+        "the entry links the second report's viewer",
+      );
+      await assertReportRoutes(w, id, htmlId, REPORT_HTML);
+      await assertReportRoutes(w, id, newer.id, second);
     },
   );
 

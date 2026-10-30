@@ -1,17 +1,28 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { renderMarkdown } from "../src/web/render.ts";
-import { ID_1, ID_2 } from "./fixtures.ts";
+import { ID_1, ID_2, ID_3 } from "./fixtures.ts";
 
 const ATTACHMENT = ID_2;
+const HTML_ATTACHMENT = ID_3;
 const UNKNOWN = "00000000-0000-4000-8000-000000000009";
 const context = {
   entryId: ID_1,
   attachmentIds: new Set([ATTACHMENT]),
+  htmlAttachmentIds: new Set<string>(),
+};
+const reportContext = {
+  entryId: ID_1,
+  attachmentIds: new Set([ATTACHMENT, HTML_ATTACHMENT]),
+  htmlAttachmentIds: new Set([HTML_ATTACHMENT]),
 };
 
 function render(body: string): string {
   return renderMarkdown(body, context);
+}
+
+function renderReport(body: string): string {
+  return renderMarkdown(body, reportContext);
 }
 
 function attributeValues(html: string, name: string): string[] {
@@ -167,5 +178,61 @@ describe("markdown rendering", () => {
     assert.equal(html.includes("<s>"), false);
     assert.equal(/\sclass=/.test(html), false);
     assert.equal(/\sstyle=/.test(html), false);
+  });
+
+  describe("html attachments", () => {
+    const VIEW = `/attachments/${ID_1}/${HTML_ATTACHMENT}/view`;
+    const RAW = `/attachments/${ID_1}/${ATTACHMENT}`;
+
+    it("links html attachments to the viewer and other files to the raw route", () => {
+      const html = renderReport(
+        `[report](attachment:${HTML_ATTACHMENT}) [file](attachment:${ATTACHMENT})`,
+      );
+      assert.deepEqual(hrefs(html), [VIEW, RAW]);
+    });
+
+    it("drops html attachments used as images, keeping the alt text", () => {
+      const html = renderReport(`![chart](attachment:${HTML_ATTACHMENT})`);
+      assert.deepEqual(srcs(html), []);
+      assert.equal(html.includes("<img"), true);
+      assert.ok(html.includes('alt="chart"'));
+      assert.equal(html.includes(HTML_ATTACHMENT), false);
+    });
+
+    it("keeps a literal viewer link", () => {
+      const html = renderReport(`[view](${VIEW})`);
+      assert.deepEqual(hrefs(html), [VIEW]);
+    });
+
+    it("strips literal content links", () => {
+      const html = renderReport(
+        `[content](/attachments/${ID_1}/${HTML_ATTACHMENT}/content)`,
+      );
+      assert.deepEqual(hrefs(html), []);
+      assert.equal(html.includes("/content"), false);
+    });
+
+    it("strips a literal viewer path used as an image source", () => {
+      const html = renderReport(`![viewer](${VIEW})`);
+      assert.deepEqual(srcs(html), []);
+      assert.equal(html.includes("/view"), false);
+    });
+
+    it("strips malformed viewer paths", () => {
+      const html = renderReport(
+        [
+          `[extra](/attachments/${ID_1}/${HTML_ATTACHMENT}/view/extra)`,
+          `[upper](/attachments/${ID_1}/${HTML_ATTACHMENT.toUpperCase()}/view)`,
+          `[entry](/attachments/nope/${HTML_ATTACHMENT}/view)`,
+        ].join(" "),
+      );
+      assert.deepEqual(hrefs(html), []);
+    });
+
+    it("keeps raw iframes in markdown as escaped text", () => {
+      const html = renderReport(`<iframe src="${VIEW}"></iframe>`);
+      assert.equal(html.includes("<iframe"), false);
+      assert.ok(html.includes("&lt;iframe"));
+    });
   });
 });

@@ -94,6 +94,9 @@ Ask in plain language. The skill runs only for explicit requests:
 - "Update the notebook entry `<id>` with the new findings."
 - "Mark that entry ready." / "Archive it." / "Restore it."
 - "Attach this diagram to the notebook entry."
+- "Save this as an interactive HTML report in my notebook." The agent has an Opus 5.5 subagent
+  write the page, attaches it, and gives you a viewer link. If that model is unavailable, the agent
+  stops and asks you. Existing installs need the [skill upgrade](#upgrading-the-skill) to get this.
 - "Open my notebook entry for the deploy plan." (opens the browser)
 
 Agents save entries as drafts immediately and do not ask for a second confirmation.
@@ -211,6 +214,11 @@ attachment id is listed under `attachments` in `notebook read <id> --json`:
 ```
 
 The website rewrites these to its own attachment URLs. Only the entry's own attachments can be linked.
+
+HTML attachments (files with the `.html` extension) get a report viewer. A link such as
+`[report](attachment:<id>)` opens the viewer, and the entry page shows a "View page" link next to
+the download link. Do not use an HTML attachment as an image: `![x](attachment:<id>)` renders
+nothing. Only `.html` is recognized; `.htm` files are downloaded like any other file.
 
 ## JSON contract
 
@@ -352,15 +360,58 @@ output to `.notebook/server.log` inside the notebook.
 - The server listens on `127.0.0.1` only and answers `GET` and `HEAD`; other methods get `405`.
   Requests must use a `Host` of `127.0.0.1:<port>` or `localhost:<port>`; anything else gets `421`.
 - It is read-only: it lists, searches, and shows entries, and downloads attachments.
-  Attachments are served only when the entry lists them. Raster images (PNG, JPEG, GIF, WebP) are
-  shown inline. Everything else, including HTML and SVG, is downloaded as `application/octet-stream`.
+  Attachments are served only when the entry lists them. On the download route
+  (`/attachments/<entry-id>/<attachment-id>`), raster images (PNG, JPEG, GIF, WebP) are shown
+  inline. Everything else is downloaded as `application/octet-stream`, including HTML and SVG.
 - Archived entries are hidden from the home page, projects, topics, and search. Search includes them
   with `include_archived=1` or `status=archived`. An archived entry is still reachable at
   `/entries/<id>`, with an "Archived" banner.
 - Markdown is rendered without raw HTML. Links are limited to `http`, `https`, `mailto`, and the
   entry's own attachments. Images may only come from the entry's own attachments.
-- Pages use no JavaScript. Every response sends a restrictive Content-Security-Policy, `nosniff`,
-  `no-referrer`, `X-Frame-Options: DENY`, and `Cache-Control: no-store`.
+- Notebook pages use no JavaScript. Every response sends a restrictive Content-Security-Policy,
+  `nosniff`, `no-referrer`, and `Cache-Control: no-store`, and `X-Frame-Options: DENY`, except the
+  report content route below, which sends `SAMEORIGIN`.
+
+### HTML report viewer
+
+An HTML attachment is a file with the `.html` extension (stored as `text/html`). Two routes serve it,
+and both return 404 for any other attachment. Both also work for archived entries.
+
+- `/attachments/<entry-id>/<attachment-id>/view` is the viewer: a full-width Notebook page with a
+  toolbar (a "Notebook" home link, the filename, "Back to entry", and "Download HTML"). The report
+  runs in an `<iframe sandbox="allow-scripts">` with no `allow-same-origin`, `referrerpolicy="no-referrer"`,
+  pointing at the content route. The viewer page has no JavaScript of its own. Its response policy is
+  `default-src 'none'; style-src 'self'; img-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+  with `X-Frame-Options: DENY`.
+- `/attachments/<entry-id>/<attachment-id>/content` returns the raw HTML as `text/html; charset=utf-8`
+  with `Content-Disposition: inline`. Its policy is
+  `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'`,
+  with `X-Frame-Options: SAMEORIGIN` so the viewer can frame it. The sandbox is part of the response
+  header, so opening this URL directly is sandboxed too.
+- "Download HTML" in the viewer uses the download route, which still returns `application/octet-stream`.
+
+In plain words: the sandbox gives the report its own opaque origin, so it cannot read the notebook
+pages, cookies, or browser storage. Inline scripts and styles run. The policy blocks resources from
+any other source, except `data:` and `blob:` images and `data:` fonts, and it blocks `fetch`, XHR,
+WebSocket, EventSource, and beacons. The sandbox also blocks forms, popups, downloads, top-level
+navigation, and dialogs.
+
+A report must be one self-contained `.html` file:
+
+- Inline `<script>` and `<style>` work. Images only as `data:` or `blob:` URLs; fonts only as `data:` URLs.
+- No external or relative scripts, stylesheets, images, or fonts.
+- No `fetch`, XHR, WebSocket, or EventSource.
+- No `eval` or `new Function` (the policy has no `'unsafe-eval'`), so libraries that need them do not work.
+- No forms, popups, modals (`alert`, `confirm`), nested frames, workers, or downloads.
+
+Limitations:
+
+- The viewer is designed for your own agent-generated reports, not for hostile HTML.
+- The policy and sandbox block resource loads and data requests, but they do not guarantee zero
+  network traffic. For example, a script can still navigate its own frame to an external URL.
+- A downloaded HTML file opened directly from disk in a browser is not protected by these headers.
+  Open reports through the viewer.
+- A JavaScript report can still use CPU and memory.
 
 **Localhost is not authentication.** Any program or user account on this machine that can reach
 `127.0.0.1` can read the notebook through the website while it runs. Stop `serve` with Ctrl+C.

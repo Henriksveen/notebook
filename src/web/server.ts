@@ -16,7 +16,13 @@ import {
   lstatOrNull,
 } from "../paths.ts";
 import { sha256Hex } from "../revision.ts";
-import { type Entry, normalizeText, STATUSES, type Status } from "../schema.ts";
+import {
+  type Attachment,
+  type Entry,
+  normalizeText,
+  STATUSES,
+  type Status,
+} from "../schema.ts";
 import { type SearchResult, searchEntries } from "../search.ts";
 import { listEntries, readEntry } from "../store.ts";
 import { renderMarkdown } from "./render.ts";
@@ -28,6 +34,7 @@ import {
   layout,
   listPage,
   notFoundPage,
+  reportViewerPage,
   type SearchForm,
   searchPage,
 } from "./templates.ts";
@@ -57,8 +64,15 @@ const SECURITY_HEADERS: Record<string, string> = {
   "Cache-Control": "no-store",
 };
 
+const REPORT_CSP =
+  "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+const REPORT_VIEWER_CSP =
+  "default-src 'none'; style-src 'self'; img-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
 const ENTRY_ROUTE = /^\/entries\/([^/]+)$/;
 const ATTACHMENT_ROUTE = /^\/attachments\/([^/]+)\/([^/]+)$/;
+const REPORT_CONTENT_ROUTE = /^\/attachments\/([^/]+)\/([^/]+)\/content$/;
+const REPORT_VIEW_ROUTE = /^\/attachments\/([^/]+)\/([^/]+)\/view$/;
 const PROJECT_ROUTE = /^\/projects\/([^/]+)$/;
 const TOPIC_ROUTE = /^\/topics\/([^/]+)$/;
 
@@ -193,6 +207,14 @@ async function route(context: Context, url: URL): Promise<Reply> {
   if (topic) return page(await topicPage(context.root, decodeName(topic[1])));
   const entry = ENTRY_ROUTE.exec(path);
   if (entry) return page(await entryView(context.root, entry[1]));
+  const reportContent = REPORT_CONTENT_ROUTE.exec(path);
+  if (reportContent) {
+    return reportContentReply(context.root, reportContent[1], reportContent[2]);
+  }
+  const reportView = REPORT_VIEW_ROUTE.exec(path);
+  if (reportView) {
+    return reportViewReply(context.root, reportView[1], reportView[2]);
+  }
   const attachment = ATTACHMENT_ROUTE.exec(path);
   if (attachment) {
     return attachmentReply(context.root, attachment[1], attachment[2]);
@@ -258,11 +280,41 @@ async function entryView(root: string, id: string): Promise<string> {
   const attachmentIds = new Set(
     loaded.entry.attachments.map((attachment) => attachment.id),
   );
+  const htmlAttachmentIds = new Set(
+    loaded.entry.attachments
+      .filter((attachment) => attachment.media_type === "text/html")
+      .map((attachment) => attachment.id),
+  );
   const bodyHtml = renderMarkdown(loaded.body, {
     entryId: loaded.entry.id,
     attachmentIds,
+    htmlAttachmentIds,
   });
   return layout(loaded.entry.title, entryPage(loaded, bodyHtml));
+}
+
+interface LoadedAttachment {
+  entry: Entry;
+  attachment: Attachment;
+  bytes: Buffer;
+}
+
+async function loadAttachment(
+  root: string,
+  entryId: string,
+  attachmentId: string,
+): Promise<LoadedAttachment | undefined> {
+  if (!isValidId(entryId) || !isValidId(attachmentId)) return undefined;
+  const { entry } = await readEntry(root, entryId);
+  const attachment = entry.attachments.find(
+    (candidate) => candidate.id === attachmentId,
+  );
+  if (!attachment) return undefined;
+  const file = attachmentFilePath(root, entry.id, attachment.stored_as);
+  await assertSafePath(root, file);
+  const bytes = await readRegularFile(file);
+  if (!bytes) return undefined;
+  return { entry, attachment, bytes };
 }
 
 async function attachmentReply(
@@ -270,16 +322,9 @@ async function attachmentReply(
   entryId: string,
   attachmentId: string,
 ): Promise<Reply> {
-  if (!isValidId(entryId) || !isValidId(attachmentId)) return notFound();
-  const { entry } = await readEntry(root, entryId);
-  const attachment = entry.attachments.find(
-    (candidate) => candidate.id === attachmentId,
-  );
-  if (!attachment) return notFound();
-  const file = attachmentFilePath(root, entry.id, attachment.stored_as);
-  await assertSafePath(root, file);
-  const bytes = await readRegularFile(file);
-  if (!bytes) return notFound();
+  const loaded = await loadAttachment(root, entryId, attachmentId);
+  if (!loaded) return notFound();
+  const { attachment, bytes } = loaded;
   const inline = RASTER_TYPES.has(attachment.media_type);
   return {
     status: 200,
@@ -291,6 +336,58 @@ async function attachmentReply(
         attachment.filename,
       ),
     },
+  };
+}
+
+async function loadReport(
+  root: string,
+  entryId: string,
+  attachmentId: string,
+): Promise<LoadedAttachment | undefined> {
+  const loaded = await loadAttachment(root, entryId, attachmentId);
+  if (loaded?.attachment.media_type !== "text/html") return undefined;
+  return loaded;
+}
+
+async function reportContentReply(
+  root: string,
+  entryId: string,
+  attachmentId: string,
+): Promise<Reply> {
+  const loaded = await loadReport(root, entryId, attachmentId);
+  if (!loaded) return notFound();
+  return {
+    status: 200,
+    type: HTML,
+    body: loaded.bytes,
+    headers: {
+      "Content-Disposition": contentDisposition(
+        "inline",
+        loaded.attachment.filename,
+      ),
+      "X-Frame-Options": "SAMEORIGIN",
+      "Content-Security-Policy": REPORT_CSP,
+    },
+  };
+}
+
+async function reportViewReply(
+  root: string,
+  entryId: string,
+  attachmentId: string,
+): Promise<Reply> {
+  const loaded = await loadReport(root, entryId, attachmentId);
+  if (!loaded) return notFound();
+  return {
+    status: 200,
+    type: HTML,
+    body: reportViewerPage(
+      loaded.entry.id,
+      loaded.attachment.id,
+      loaded.attachment.filename,
+      loaded.entry.title,
+    ),
+    headers: { "Content-Security-Policy": REPORT_VIEWER_CSP },
   };
 }
 

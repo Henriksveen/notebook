@@ -124,7 +124,8 @@ notebook attach <id> --expected-revision <revision> --file ./diagram.png --name 
 Attachments are referenced in the Markdown body as `attachment:<attachment-id>`. To show an
 image, put `![diagram](attachment:<attachment-id>)` in the body with an `update` (use the
 new revision returned by `attach`). Link other attachments the same way with
-`[name](attachment:<attachment-id>)`.
+`[name](attachment:<attachment-id>)`. An HTML attachment (`.html`) linked this way opens in the
+report viewer. Never use an HTML attachment as an image; it renders nothing.
 
 **Status, backup, and website:**
 
@@ -137,6 +138,60 @@ notebook open --no-browser --json        # website home page URL
 
 Use `open` without `--no-browser` only when the user asks to open or show the entry in the
 browser. Otherwise give the URL.
+
+## HTML reports
+
+Use this only when the user explicitly asks to save an HTML page or report (interactive or
+static) to the notebook. The ground rules still apply: explicit request only, search first.
+
+1. **Delegate the generation.** Generate the HTML in a subagent that runs exactly the model
+   `github-copilot/claude-opus-5.5`, using the harness's subagent mechanism. Do not write the page
+   yourself. If that model is unavailable or cannot be selected, STOP and ask the user. Never
+   substitute another model, and save nothing until the user answers.
+2. **Brief the subagent** with a self-contained brief: the data or content, the purpose and
+   audience, and these hard constraints:
+   - One self-contained `.html` file, written to a temporary path outside the notebook directory
+     (for example `/tmp/<name>.html`).
+   - All CSS and JavaScript inline. Embed the data inline.
+   - Images and fonts only as `data:` URLs, or none. Prefer system fonts.
+   - No external or relative URLs for scripts, stylesheets, images, fonts, or iframes.
+   - No `fetch`, XHR, WebSocket, EventSource, or `sendBeacon`.
+   - No `eval`, `new Function`, or libraries that need them.
+   - No forms, `alert`/`confirm`/`prompt`, popups, or navigation.
+   - Must work offline in a sandboxed iframe without same-origin access. Do not use or depend on
+     localStorage, sessionStorage, cookies, or IndexedDB (guard them or avoid them).
+   - No secrets or unrelated personal data.
+   - The subagent must NOT run any `notebook` command. It returns only the file path and a
+     one-paragraph description.
+3. **Check the file before saving.** Confirm that the file exists, ends with `.html`, and is at
+   most 20 MiB. Inspect the source for:
+   - `<script src`, `<link`, `@import`, `url(` that is not `data:`, and `src=` or `href=` with
+     `http(s)://`, protocol-relative (`//`), or relative paths. Anchor `href`s to external sites
+     are acceptable only as plain links the user clicks; prefer none.
+   - `fetch(`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `sendBeacon`, `eval(`, `new Function`,
+     storage APIs (`localStorage`, `sessionStorage`, `indexedDB`, `document.cookie`).
+   - Secrets and unrelated personal data.
+
+   If you find problems, send them back to the same subagent (same model) to fix. After two failed
+   rounds, stop and tell the user. This is a practical self-containment check, not a security audit.
+4. **Save.** Create the Markdown entry (type usually `report`). The body summarizes what the page
+   shows, the key numbers or findings, and how the data was produced. Then attach the file:
+   ```sh
+   notebook attach <id> --expected-revision <rev> --file /tmp/<name>.html --name <descriptive-name>.html --json
+   ```
+   Read the entry, then `update` its body with the revision from `attach`, adding a line near the
+   top such as `[Open the interactive report](attachment:<attachment-id>)`. Always use the latest
+   revision from each result.
+5. **Viewer link.** Build it from the entry URL the CLI returned: replace `/entries/<id>` with
+   `/attachments/<id>/<attachment-id>/view`. Do not hard-code the port. Report it alongside the
+   entry URL, and say that it works only while the local website runs (`notebook open`).
+6. **Regenerate or update.** Do not create a new entry. Find and `read` the existing entry, repeat
+   steps 1-3 for the new file, then attach it to that entry as a NEW attachment with a descriptive
+   name (include a date or version). `update` the existing entry's body with the revision from
+   `attach` so the link points at the new attachment, and keep a short line about the earlier
+   version if useful. Never try to delete or replace files in the notebook directory; older
+   versions remain.
+7. Optionally delete the temporary file after a successful attach.
 
 ## Reading mutation results
 
@@ -185,3 +240,4 @@ Do not claim a backup succeeded unless the `backup` status is `pushed`.
 4. Facts separated from speculation; real sources only; no secrets.
 5. `create` (or `update` with a fresh revision) with `--json --input -` via heredoc.
 6. Report title, URL, status, and backup status honestly.
+7. HTML report request? Follow HTML reports: Opus subagent, checks, attach, viewer link.

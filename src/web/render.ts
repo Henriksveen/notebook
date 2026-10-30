@@ -7,10 +7,12 @@ type Token = ReturnType<InstanceType<typeof MarkdownIt>["parse"]>[number];
 export interface RenderContext {
   entryId: string;
   attachmentIds: ReadonlySet<string>;
+  htmlAttachmentIds: ReadonlySet<string>;
 }
 
 const ATTACHMENT_PREFIX = "attachment:";
 const ATTACHMENT_PATH = /^\/attachments\/[0-9a-f-]{36}\/[0-9a-f-]{36}$/;
+const REPORT_VIEW_PATH = /^\/attachments\/[0-9a-f-]{36}\/[0-9a-f-]{36}\/view$/;
 
 const markdown = new MarkdownIt({
   html: false,
@@ -83,10 +85,14 @@ function rewriteAttr(
   const raw = String(attr[1]);
   if (!raw.startsWith(ATTACHMENT_PREFIX)) return;
   const id = raw.slice(ATTACHMENT_PREFIX.length);
-  attr[1] =
-    isValidId(id) && context.attachmentIds.has(id)
-      ? `/attachments/${context.entryId}/${id}`
-      : "";
+  if (!isValidId(id) || !context.attachmentIds.has(id)) {
+    attr[1] = "";
+  } else if (!context.htmlAttachmentIds.has(id)) {
+    attr[1] = `/attachments/${context.entryId}/${id}`;
+  } else {
+    attr[1] =
+      name === "href" ? `/attachments/${context.entryId}/${id}/view` : "";
+  }
 }
 
 function transformLink(
@@ -96,7 +102,7 @@ function transformLink(
   const href = attribs.href ?? "";
   const kept: sanitizeHtml.Attributes = {};
   const protocol = protocolOf(href);
-  if (ATTACHMENT_PATH.test(href)) {
+  if (ATTACHMENT_PATH.test(href) || REPORT_VIEW_PATH.test(href)) {
     kept.href = href;
   } else if (protocol === "http:" || protocol === "https:") {
     kept.href = href;
