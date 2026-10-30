@@ -4,6 +4,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   symlinkSync,
@@ -20,6 +21,7 @@ const REPO = fileURLToPath(new URL("..", import.meta.url));
 const INSTALL = join(REPO, "scripts", "install.sh");
 const BIN = join(REPO, "bin", "notebook");
 const SKILL_SRC = join(REPO, "skills", "notebook", "SKILL.md");
+const REFERENCES_SRC = join(REPO, "skills", "notebook", "references");
 
 interface Result {
   code: number;
@@ -124,6 +126,12 @@ describe("scripts/install.sh", () => {
       readFileSync(sandbox.skill, "utf8"),
       readFileSync(SKILL_SRC, "utf8"),
     );
+    for (const name of readdirSync(REFERENCES_SRC)) {
+      assert.equal(
+        readFileSync(join(sandbox.skill, "..", "references", name), "utf8"),
+        readFileSync(join(REFERENCES_SRC, name), "utf8"),
+      );
+    }
     assert.equal(existsSync(join(sandbox.notebook, ".git")), true);
     assert.match(result.stdout, /next steps/i);
     assert.match(result.stdout, /restart/i);
@@ -187,6 +195,34 @@ describe("scripts/install.sh", () => {
     assert.equal(readFileSync(sandbox.skill, "utf8"), "my own skill\n");
     assert.equal(exists(sandbox.link), false);
     assert.equal(exists(sandbox.notebook), false);
+  });
+
+  it("refuses a different existing reference file and leaves everything untouched", async () => {
+    const sandbox = await newSandbox();
+    const reference = join(sandbox.skill, "..", "references", "html-style.md");
+    mkdirSync(join(reference, ".."), { recursive: true });
+    writeFileSync(reference, "my own guide\n");
+    const result = await install([], sandbox.env);
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /differs from the bundled skill/);
+    assert.equal(readFileSync(reference, "utf8"), "my own guide\n");
+    assert.equal(exists(sandbox.skill), false);
+    assert.equal(exists(sandbox.link), false);
+    assert.equal(exists(sandbox.notebook), false);
+  });
+
+  it("adds missing reference files next to an identical installed skill", async () => {
+    const sandbox = await newSandbox();
+    mkdirSync(join(sandbox.skill, ".."), { recursive: true });
+    writeFileSync(sandbox.skill, readFileSync(SKILL_SRC));
+    const result = await install([], sandbox.env);
+    assert.equal(result.code, 0, result.stderr);
+    for (const name of readdirSync(REFERENCES_SRC)) {
+      assert.equal(
+        readFileSync(join(sandbox.skill, "..", "references", name), "utf8"),
+        readFileSync(join(REFERENCES_SRC, name), "utf8"),
+      );
+    }
   });
 
   it("refuses an existing different bin/notebook file", async () => {

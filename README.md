@@ -26,8 +26,8 @@ scripts/install.sh              # install
 The installer is opt-in and does exactly this:
 
 - Links `~/.local/bin/notebook` to `bin/notebook` in this checkout.
-- Copies `skills/notebook/SKILL.md` to `~/.config/opencode/skills/notebook/SKILL.md`, so your
-  OpenCode and T3 Code agents can use the skill.
+- Copies `skills/notebook/` (`SKILL.md` and its `references/` folder) to
+  `~/.config/opencode/skills/notebook/`, so your OpenCode and T3 Code agents can use the skill.
 - Runs `notebook init` to create `~/notebook` (or `$NOTEBOOK_DIR`) if that directory does not exist.
 
 It never edits shell profiles or OpenCode configuration, and it never passes a remote to `init`.
@@ -40,11 +40,11 @@ After installing, **restart your agent session** (OpenCode or T3 Code) so it dis
 
 ### Upgrading the skill
 
-The installer refuses to replace a differing skill file. After you update `skills/notebook/SKILL.md`
-in the checkout, remove the installed copy and run the installer again:
+The installer refuses to replace differing skill files. After you update `skills/notebook/` in the
+checkout, remove the installed copy and run the installer again:
 
 ```sh
-rm ~/.config/opencode/skills/notebook/SKILL.md
+rm -r ~/.config/opencode/skills/notebook
 scripts/install.sh
 ```
 
@@ -95,8 +95,8 @@ Ask in plain language. The skill runs only for explicit requests:
 - "Mark that entry ready." / "Archive it." / "Restore it."
 - "Attach this diagram to the notebook entry."
 - "Save this as an interactive HTML report in my notebook." The agent has an Opus 5.5 subagent
-  write the page, attaches it, and gives you a viewer link. If that model is unavailable, the agent
-  stops and asks you. Existing installs need the [skill upgrade](#upgrading-the-skill) to get this.
+  write the page in T3 Code's dark style, attaches it, and gives you a viewer link. If that model is
+  unavailable, the agent stops and asks you. Existing installs need the [skill upgrade](#upgrading-the-skill) to get this.
 - "Open my notebook entry for the deploy plan." (opens the browser)
 
 Agents save entries as drafts immediately and do not ask for a second confirmation.

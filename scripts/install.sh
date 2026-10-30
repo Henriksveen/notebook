@@ -11,7 +11,7 @@ Usage: scripts/install.sh [--dry-run] [--help]
 
 Installs notebook for the current user:
   ~/.local/bin/notebook                        symlink to this checkout's bin/notebook
-  ~/.config/opencode/skills/notebook/SKILL.md  copy of skills/notebook/SKILL.md
+  ~/.config/opencode/skills/notebook/          copy of skills/notebook/ (SKILL.md and references/)
   ~/notebook (or $NOTEBOOK_DIR)                created with 'notebook init' if missing
 
 Existing files that differ are refused, not overwritten. Running it again is safe.
@@ -63,9 +63,7 @@ fi
 bin_dir="$HOME/.local/bin"
 link="$bin_dir/notebook"
 target="$repo/bin/notebook"
-skill_src="$repo/skills/notebook/SKILL.md"
 skill_dir="$HOME/.config/opencode/skills/notebook"
-skill_dst="$skill_dir/SKILL.md"
 notebook_dir=${NOTEBOOK_DIR:-$HOME/notebook}
 
 if [ -e "$bin_dir" ] && [ ! -d "$bin_dir" ]; then
@@ -86,19 +84,30 @@ if [ "$link_state" = other ]; then
   die "$link already exists and does not point to $target; move it aside and run again"
 fi
 
-skill_state=missing
-if [ -L "$skill_dst" ]; then
-  skill_state=other
-elif [ -e "$skill_dst" ]; then
-  if [ -f "$skill_dst" ] && cmp -s "$skill_src" "$skill_dst"; then
-    skill_state=same
+# The skill is SKILL.md plus every regular file in references/, copied one by one.
+skill_src_dir="$repo/skills/notebook"
+skill_files="SKILL.md"
+for file in "$skill_src_dir"/references/*; do
+  [ -f "$file" ] || continue
+  skill_files="$skill_files references/${file##*/}"
+done
+
+skill_state=same
+skill_missing=""
+for rel in $skill_files; do
+  src="$skill_src_dir/$rel"
+  dst="$skill_dir/$rel"
+  if [ -L "$dst" ]; then
+    die "$dst already exists and differs from the bundled skill; move it aside and run again"
+  elif [ -e "$dst" ]; then
+    if [ ! -f "$dst" ] || ! cmp -s "$src" "$dst"; then
+      die "$dst already exists and differs from the bundled skill; move it aside and run again"
+    fi
   else
-    skill_state=other
+    skill_state=missing
+    skill_missing="$skill_missing $rel"
   fi
-fi
-if [ "$skill_state" = other ]; then
-  die "$skill_dst already exists and differs from the bundled skill; move it aside and run again"
-fi
+done
 
 nb_state=missing
 if [ -e "$notebook_dir" ]; then
@@ -127,15 +136,17 @@ case $link_state in
 esac
 
 case $skill_state in
-  same) printf 'Skill: already installed (%s)\n' "$skill_dst" ;;
+  same) printf 'Skill: already installed (%s)\n' "$skill_dir" ;;
   missing)
-    if [ "$DRY_RUN" = 1 ]; then
-      printf '[dry-run] would copy %s to %s\n' "$skill_src" "$skill_dst"
-    else
-      mkdir -p "$skill_dir"
-      cp "$skill_src" "$skill_dst"
-      printf 'Skill: installed %s\n' "$skill_dst"
-    fi
+    for rel in $skill_missing; do
+      if [ "$DRY_RUN" = 1 ]; then
+        printf '[dry-run] would copy %s to %s\n' "$skill_src_dir/$rel" "$skill_dir/$rel"
+      else
+        mkdir -p "$(dirname -- "$skill_dir/$rel")"
+        cp "$skill_src_dir/$rel" "$skill_dir/$rel"
+        printf 'Skill: installed %s\n' "$skill_dir/$rel"
+      fi
+    done
     ;;
 esac
 

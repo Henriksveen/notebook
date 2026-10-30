@@ -1,0 +1,506 @@
+/* T3 Code dark theme for notebook HTML reports.
+   Copy this whole file into the report's <style> element, then add page-specific rules after it.
+   Tokens come from T3 Code's default dark appearance. */
+
+:root {
+  color-scheme: dark;
+
+  --background: #000000;
+  --surface: #111111;
+  --surface-2: #1e1e1e;
+  --foreground: #f5f5f5;
+  --muted-foreground: #a1a1a1;
+  --border: rgb(255 255 255 / 0.08);
+  --input: rgb(255 255 255 / 0.11);
+  --muted: rgb(255 255 255 / 0.03);
+  --accent: rgb(255 255 255 / 0.04);
+  --hover: rgb(255 255 255 / 0.06);
+
+  --primary: #346bf1;
+  --primary-foreground: #ffffff;
+  --link: #51a2ff;
+  --info: #51a2ff;
+  --success: #00d492;
+  --warning: #ffb900;
+  --error: #ff6467;
+  --info-surface: rgb(81 162 255 / 0.12);
+  --success-surface: rgb(0 212 146 / 0.12);
+  --warning-surface: rgb(255 185 0 / 0.12);
+  --error-surface: rgb(255 100 103 / 0.12);
+
+  --chart-1: #51a2ff;
+  --chart-2: #00d492;
+  --chart-3: #ffb900;
+  --chart-4: #a684ff;
+  --chart-5: #00bcff;
+  --chart-6: #ed6aff;
+  --chart-7: #ff8904;
+  --chart-grid: rgb(255 255 255 / 0.06);
+  --chart-axis: #a1a1a1;
+
+  --radius-sm: 0.25rem;
+  --radius: 0.5rem;
+  --radius-lg: 0.75rem;
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Inter Variable", Inter, "Segoe UI",
+    system-ui, sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono",
+    monospace;
+
+  --page-width: 72rem;
+  --prose-width: 46rem;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.08) transparent;
+}
+
+html {
+  background: var(--background);
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.page {
+  max-width: var(--page-width);
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+.prose {
+  max-width: var(--prose-width);
+}
+
+/* Headings and text */
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 1.75rem 0 0.5rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+
+h1 {
+  margin-top: 0;
+  font-size: 1.5rem;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  font-size: 1.125rem;
+}
+
+h3 {
+  font-size: 1rem;
+}
+
+h4 {
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+p,
+ul,
+ol,
+blockquote,
+pre,
+table {
+  margin: 0.65rem 0;
+}
+
+ul,
+ol {
+  padding-inline-start: 1.25rem;
+}
+
+li + li {
+  margin-top: 0.25rem;
+}
+
+strong {
+  font-weight: 600;
+}
+
+small,
+.muted {
+  color: var(--muted-foreground);
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.lede {
+  max-width: var(--prose-width);
+  margin: 0.25rem 0 0;
+  color: var(--muted-foreground);
+  font-size: 1rem;
+}
+
+a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+hr {
+  height: 1px;
+  margin: 2rem 0;
+  border: 0;
+  background: var(--border);
+}
+
+blockquote {
+  margin-inline: 0;
+  padding-inline-start: 0.8rem;
+  border-inline-start: 2px solid rgb(245 245 245 / 0.35);
+}
+
+code,
+kbd,
+pre {
+  font-family: var(--font-mono);
+}
+
+:not(pre) > code {
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-sm);
+  background: rgb(245 245 245 / 0.1);
+  font-size: 0.85em;
+}
+
+pre {
+  overflow-x: auto;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.num,
+td.num,
+th.num {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+/* Layout helpers */
+
+.header {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.section {
+  margin-top: 2.5rem;
+}
+
+.stack > * + * {
+  margin-top: 1rem;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+/* Surfaces */
+
+.card {
+  padding: 1rem 1.125rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.card > :first-child {
+  margin-top: 0;
+}
+
+.card > :last-child {
+  margin-bottom: 0;
+}
+
+.card-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/* KPI tiles */
+
+.stat-label {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.stat-value {
+  margin: 0.25rem 0 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.stat-delta {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.up {
+  color: var(--success);
+}
+
+.down {
+  color: var(--error);
+}
+
+/* Callouts */
+
+.callout {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--muted);
+}
+
+.callout > :first-child {
+  margin-top: 0;
+}
+
+.callout > :last-child {
+  margin-bottom: 0;
+}
+
+.callout.info {
+  border-color: rgb(81 162 255 / 0.3);
+  background: var(--info-surface);
+}
+
+.callout.success {
+  border-color: rgb(0 212 146 / 0.3);
+  background: var(--success-surface);
+}
+
+.callout.warning {
+  border-color: rgb(255 185 0 / 0.3);
+  background: var(--warning-surface);
+}
+
+.callout.error {
+  border-color: rgb(255 100 103 / 0.3);
+  background: var(--error-surface);
+}
+
+/* Badges */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.badge.info {
+  border-color: transparent;
+  background: var(--info-surface);
+  color: var(--info);
+}
+
+.badge.success {
+  border-color: transparent;
+  background: var(--success-surface);
+  color: var(--success);
+}
+
+.badge.warning {
+  border-color: transparent;
+  background: var(--warning-surface);
+  color: var(--warning);
+}
+
+.badge.error {
+  border-color: transparent;
+  background: var(--error-surface);
+  color: var(--error);
+}
+
+/* Tables */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.table-wrap table {
+  margin: 0;
+}
+
+th,
+td {
+  padding: 0.5rem 0.875rem;
+  border-bottom: 1px solid var(--border);
+  text-align: start;
+  vertical-align: top;
+}
+
+thead th {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+tbody tr:hover td {
+  background: var(--accent);
+}
+
+/* Controls */
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button,
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--input);
+  border-radius: var(--radius);
+  background: var(--accent);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--hover);
+}
+
+button[aria-pressed="true"],
+button.primary {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+input,
+select {
+  min-height: 2rem;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--input);
+  border-radius: var(--radius);
+  background: var(--background);
+  font-size: 0.875rem;
+}
+
+input::placeholder {
+  color: var(--muted-foreground);
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Scrollbars */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.08);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 0.12);
+}
+
+@media (max-width: 40rem) {
+  .page {
+    padding: 1.5rem 1rem 3rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none;
+    animation: none;
+  }
+}
