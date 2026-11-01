@@ -420,6 +420,8 @@ then `kill <pid>`).
 
 ## Development
 
+See [AGENTS.md](AGENTS.md) for repository guidance and safety rules when contributing.
+
 ```sh
 npm ci                # install dependencies from package-lock.json
 npm test              # node:test suites (test/*.test.ts)
