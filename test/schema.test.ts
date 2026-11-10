@@ -1,109 +1,34 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-  normalizeSlug,
-  validateEntry,
-  validateEntryInput,
-  validateEntryPatch,
-} from "../src/schema.ts";
-import { makeEntry } from "./fixtures.ts";
+import { normalizeSlug, validateMetadata } from "../src/schema.ts";
 
-const validInput = {
-  title: "  Standalone title  ",
-  summary: "One sentence.",
-  type: "research",
-  body: "Body",
-};
-
-describe("entry validation", () => {
-  it("accepts a valid entry", () => {
-    const result = validateEntry(makeEntry());
-    assert.equal(result.ok, true);
-  });
-
-  it("rejects unknown front matter keys without echoing them", () => {
-    const result = validateEntry({ ...makeEntry(), surprise: true });
-    assert.equal(result.ok, false);
-    if (!result.ok)
-      assert.deepEqual(result.errors, [
-        { field: "<unknown field #13>", message: "is not a known field" },
-      ]);
-  });
-
-  it("rejects a non-UUID id and a wrong schema version", () => {
-    const result = validateEntry({
-      ...makeEntry(),
-      id: "not-a-uuid",
-      schema_version: 2,
+const validInput = { title: "Standalone title", summary: "One sentence." };
+describe("metadata validation", () => {
+  it("normalizes shared fields and rejects invalid titles, summaries, managed and unknown keys", () => {
+    const result = validateMetadata({
+      ...validInput,
+      title: " Title ",
+      project: " ",
     });
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.deepEqual(
-        result.errors.map((error) => error.field),
-        ["schema_version", "id"],
-      );
-    }
-  });
-
-  it("rejects multi-line titles and over-long summaries", () => {
-    const result = validateEntry({
-      ...makeEntry(),
-      title: "a\nb",
-      summary: "x".repeat(501),
-    });
-    assert.equal(result.ok, false);
-    if (!result.ok) {
-      assert.deepEqual(
-        result.errors.map((error) => error.field),
-        ["title", "summary"],
-      );
-    }
-  });
-
-  it("defaults a blank project to Inbox", () => {
-    const result = validateEntry({ ...makeEntry(), project: "   " });
-    assert.equal(result.ok && result.value.project, "Inbox");
-  });
-
-  it("requires archived_from exactly when archived", () => {
-    const missing = validateEntry({ ...makeEntry(), status: "archived" });
-    assert.equal(missing.ok, false);
-    const bad = validateEntry({
-      ...makeEntry(),
-      status: "archived",
-      archived_from: "archived",
-    });
-    assert.equal(bad.ok, false);
-    const stray = validateEntry({
-      ...makeEntry(),
-      status: "ready",
-      archived_from: "draft",
-    });
-    assert.equal(stray.ok, false);
-    const good = validateEntry({
-      ...makeEntry(),
-      status: "archived",
-      archived_from: "ready",
-    });
-    assert.equal(good.ok, true);
-  });
-
-  it("requires canonical UTC timestamps", () => {
-    assert.equal(
-      validateEntry({ ...makeEntry(), created_at: "2026-10-29T12:00:00Z" }).ok,
-      false,
-    );
-    assert.equal(
-      validateEntry({ ...makeEntry(), updated_at: "2026-02-30T12:00:00.000Z" })
-        .ok,
-      false,
-    );
+    assert.ok(result.ok);
+    assert.equal(result.value.title, "Title");
+    assert.equal(result.value.project, "Inbox");
+    assert.deepEqual(result.value.topics, []);
+    assert.deepEqual(result.value.sources, []);
+    for (const value of [
+      { ...validInput, title: "a\nb" },
+      { ...validInput, summary: "x".repeat(501) },
+      { ...validInput, title: "" },
+      { ...validInput, project: "x".repeat(81) },
+      { ...validInput, id: "managed" },
+      { ...validInput, unknown: true },
+    ])
+      assert.equal(validateMetadata(value).ok, false);
   });
 });
-
-describe("topic and type normalization", () => {
+describe("topic normalization", () => {
   it("lowercases, dedupes and sorts topics", () => {
-    const result = validateEntryInput({
+    const result = validateMetadata({
       ...validInput,
       topics: ["Zeta", "alpha", "ALPHA", " beta-2 "],
     });
@@ -115,22 +40,22 @@ describe("topic and type normalization", () => {
   });
 
   it("normalizes topic text and rejects unusable or too many topics", () => {
-    const normalized = validateEntryInput({
+    const normalized = validateMetadata({
       ...validInput,
       topics: ["a_b", "A--B"],
     });
     assert.ok(normalized.ok);
     assert.deepEqual(normalized.value.topics, ["a-b"]);
     assert.equal(
-      validateEntryInput({ ...validInput, topics: ["!!!"] }).ok,
+      validateMetadata({ ...validInput, topics: ["!!!"] }).ok,
       false,
     );
     assert.equal(
-      validateEntryInput({ ...validInput, topics: ["x".repeat(51)] }).ok,
+      validateMetadata({ ...validInput, topics: ["x".repeat(51)] }).ok,
       false,
     );
     const many = Array.from({ length: 21 }, (_, i) => `topic-${i}`);
-    assert.equal(validateEntryInput({ ...validInput, topics: many }).ok, false);
+    assert.equal(validateMetadata({ ...validInput, topics: many }).ok, false);
   });
 
   it("normalizes slugs with NFKC", () => {
@@ -140,52 +65,10 @@ describe("topic and type normalization", () => {
     assert.equal(normalizeSlug("!!!"), undefined);
     assert.equal(normalizeSlug("x".repeat(51)), undefined);
   });
-
-  it("normalizes the type to a slug", () => {
-    const normalized = validateEntryInput({ ...validInput, type: "How To" });
-    assert.ok(normalized.ok);
-    assert.equal(normalized.value.type, "how-to");
-    assert.equal(validateEntryInput({ ...validInput, type: "---" }).ok, false);
-    assert.equal(
-      validateEntryInput({ ...validInput, type: "how-to" }).ok,
-      true,
-    );
-  });
 });
-
-describe("create input", () => {
-  it("defaults project to Inbox and topics/sources to empty arrays", () => {
-    const result = validateEntryInput(validInput);
-    assert.equal(result.ok, true);
-    if (result.ok) {
-      assert.equal(result.value.project, "Inbox");
-      assert.deepEqual(result.value.topics, []);
-      assert.deepEqual(result.value.sources, []);
-      assert.equal(result.value.title, "Standalone title");
-    }
-  });
-
-  it("rejects managed fields such as id, status and timestamps", () => {
-    for (const field of [
-      "id",
-      "status",
-      "created_at",
-      "updated_at",
-      "attachments",
-    ]) {
-      const result = validateEntryInput({ ...validInput, [field]: "x" });
-      assert.equal(result.ok, false, field);
-    }
-  });
-
-  it("requires a non-empty body", () => {
-    assert.equal(validateEntryInput({ ...validInput, body: "   " }).ok, false);
-  });
-});
-
 describe("sources", () => {
   const withSource = (source: unknown) =>
-    validateEntryInput({ ...validInput, sources: [source] });
+    validateMetadata({ ...validInput, sources: [source] });
 
   it("accepts url, repo and conversation kinds", () => {
     assert.equal(
@@ -230,28 +113,5 @@ describe("sources", () => {
         .ok,
       false,
     );
-  });
-});
-
-describe("patches", () => {
-  it("accepts a partial patch of content fields", () => {
-    const result = validateEntryPatch({ title: "New", topics: ["b", "a"] });
-    assert.deepEqual(result, {
-      ok: true,
-      value: { title: "New", topics: ["a", "b"] },
-    });
-  });
-
-  it("rejects empty patches and immutable fields", () => {
-    assert.equal(validateEntryPatch({}).ok, false);
-    for (const field of [
-      "id",
-      "created_at",
-      "status",
-      "attachments",
-      "archived_from",
-    ]) {
-      assert.equal(validateEntryPatch({ [field]: "x" }).ok, false, field);
-    }
   });
 });

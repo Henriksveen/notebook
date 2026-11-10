@@ -25,7 +25,7 @@ export async function atomicWrite(
   await syncDirectory(dir);
 }
 
-async function syncDirectory(dir: string): Promise<void> {
+export async function syncDirectory(dir: string): Promise<void> {
   const handle = await open(dir, "r");
   try {
     await handle.sync();

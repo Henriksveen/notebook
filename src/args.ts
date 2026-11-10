@@ -1,26 +1,20 @@
 import { parseArgs } from "node:util";
 import { NotebookError } from "./errors.ts";
-
 export const COMMANDS = [
+  "page",
+  "prompt",
   "init",
-  "create",
-  "validate",
-  "search",
-  "read",
-  "update",
-  "ready",
-  "archive",
-  "restore",
-  "attach",
   "status",
   "backup",
   "open",
   "serve",
 ] as const;
-
 export type CommandName = (typeof COMMANDS)[number];
-
 export interface Values {
+  html?: string;
+  commit?: string;
+  values?: string;
+  kind?: string;
   dir?: string;
   json?: boolean;
   help?: boolean;
@@ -28,21 +22,18 @@ export interface Values {
   remote?: string;
   input?: string;
   "expected-revision"?: string;
-  file?: string;
-  name?: string;
   project?: string;
   topic?: string;
-  type?: string;
-  status?: string;
-  "include-archived"?: boolean;
   limit?: string;
   offset?: string;
   "no-browser"?: boolean;
 }
-
 type OptionName = keyof Values;
-
 const OPTIONS = {
+  html: { type: "string" },
+  commit: { type: "string" },
+  values: { type: "string" },
+  kind: { type: "string" },
   dir: { type: "string" },
   json: { type: "boolean" },
   help: { type: "boolean", short: "h" },
@@ -50,60 +41,37 @@ const OPTIONS = {
   remote: { type: "string" },
   input: { type: "string" },
   "expected-revision": { type: "string" },
-  file: { type: "string" },
-  name: { type: "string" },
   project: { type: "string" },
   topic: { type: "string" },
-  type: { type: "string" },
-  status: { type: "string" },
-  "include-archived": { type: "boolean" },
   limit: { type: "string" },
   offset: { type: "string" },
   "no-browser": { type: "boolean" },
 } as const;
-
 const GLOBAL_OPTIONS: OptionName[] = ["dir", "json", "help", "port"];
-
-type PositionalRule = "none" | "id" | "optional-id" | "query";
-
+type PositionalRule = "none" | "query";
 interface CommandSpec {
   positionals: PositionalRule;
   options: OptionName[];
 }
-
-const REVISION: OptionName[] = ["expected-revision"];
-
+const ITEM_OPTIONS: OptionName[] = [
+  "input",
+  "commit",
+  "expected-revision",
+  "project",
+  "topic",
+  "limit",
+  "offset",
+  "no-browser",
+];
 const COMMAND_SPECS: Record<CommandName, CommandSpec> = {
+  page: { positionals: "query", options: [...ITEM_OPTIONS, "html", "kind"] },
+  prompt: { positionals: "query", options: [...ITEM_OPTIONS, "values"] },
   init: { positionals: "none", options: ["remote"] },
-  create: { positionals: "none", options: ["input"] },
-  validate: { positionals: "optional-id", options: ["input"] },
-  search: {
-    positionals: "query",
-    options: [
-      "project",
-      "topic",
-      "type",
-      "status",
-      "include-archived",
-      "limit",
-      "offset",
-    ],
-  },
-  read: { positionals: "id", options: [] },
-  update: { positionals: "id", options: [...REVISION, "input"] },
-  ready: { positionals: "id", options: REVISION },
-  archive: { positionals: "id", options: REVISION },
-  restore: { positionals: "id", options: REVISION },
-  attach: {
-    positionals: "id",
-    options: [...REVISION, "file", "name"],
-  },
   status: { positionals: "none", options: [] },
   backup: { positionals: "none", options: [] },
-  open: { positionals: "optional-id", options: ["no-browser"] },
+  open: { positionals: "none", options: ["no-browser"] },
   serve: { positionals: "none", options: [] },
 };
-
 export type Invocation =
   | { kind: "help" }
   | {
@@ -169,12 +137,6 @@ function checkPositionals(command: CommandName, positionals: string[]): void {
   switch (COMMAND_SPECS[command].positionals) {
     case "none":
       if (count > 0) throw usage(`${command} takes no positional arguments`);
-      return;
-    case "id":
-      if (count !== 1) throw usage(`${command} requires exactly one ID`);
-      return;
-    case "optional-id":
-      if (count > 1) throw usage(`${command} takes at most one ID`);
       return;
     case "query":
       return;

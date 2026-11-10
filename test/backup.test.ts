@@ -3,7 +3,8 @@ import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { delimiter, dirname, join } from "node:path";
 import { after, describe, it } from "node:test";
 import { attemptBackup, readBackupState } from "../src/backup.ts";
-import { createEntry, initNotebook } from "../src/notebook.ts";
+import { createItem } from "../src/library.ts";
+import { initNotebook } from "../src/notebook.ts";
 import {
   cleanupTempDirs,
   git,
@@ -20,8 +21,7 @@ function input() {
   return {
     title: "Backup check",
     summary: "Summary.",
-    type: "note",
-    body: "Body.\n",
+    kind: "concept",
   };
 }
 
@@ -40,7 +40,7 @@ describe("attemptBackup", () => {
     const dir = await newNotebook();
     const bare = await makeBareRemote();
     await initNotebook(dir, { remote: bare });
-    const created = await createEntry(dir, input());
+    const created = await createItem(dir, "page", input(), "<p>Body.</p>");
     assert.deepEqual(created.backup, { status: "pushed" });
     assert.equal(
       await git(bare, ["rev-parse", "main"]),
@@ -52,7 +52,7 @@ describe("attemptBackup", () => {
     const dir = await newNotebook();
     const missing = join(await makeTempDir(), "missing.git");
     await initNotebook(dir, { remote: missing });
-    const created = await createEntry(dir, input());
+    const created = await createItem(dir, "page", input(), "<p>Body.</p>");
     assert.deepEqual(created.backup, {
       status: "pending",
       reason: "push_failed",
@@ -70,7 +70,7 @@ describe("attemptBackup", () => {
   it("reports pending/timeout when the push exceeds the timeout", async () => {
     const dir = await newNotebook();
     await initNotebook(dir, { remote: await makeBareRemote() });
-    await createEntry(dir, input());
+    await createItem(dir, "page", input(), "<p>Body.</p>");
     assert.deepEqual(await attemptBackup(dir, { pushTimeoutMs: 1 }), {
       status: "pending",
       reason: "timeout",
@@ -99,16 +99,16 @@ describe("attemptBackup", () => {
     }
   });
 
-  it("blocks a manually committed secret in entries/ and does not push it", async () => {
+  it("blocks a manually committed secret in notes/ and does not push it", async () => {
     const dir = await newNotebook();
     const bare = await makeBareRemote();
     await initNotebook(dir, { remote: bare });
-    await mkdir(join(dir, "entries"));
+    await mkdir(join(dir, "notes"));
     await writeFile(
-      join(dir, "entries", `${ID_1}.md`),
+      join(dir, "notes", `${ID_1}.md`),
       `---\ntitle: "Manual"\n---\nKey: ${SECRET_TOKEN}\n`,
     );
-    await git(dir, ["add", "--", "entries"]);
+    await git(dir, ["add", "--", "notes"]);
     await git(dir, ["commit", "-m", "manual commit"]);
 
     assert.deepEqual(await attemptBackup(dir), {
@@ -122,7 +122,7 @@ describe("attemptBackup", () => {
     const dir = await newNotebook();
     const missing = join(await makeTempDir(), "private-location.git");
     await initNotebook(dir, { remote: missing });
-    await createEntry(dir, input());
+    await createItem(dir, "page", input(), "<p>Body.</p>");
 
     const state = await readBackupState(dir);
     assert.equal(state?.status, "pending");
@@ -143,7 +143,7 @@ describe("attemptBackup", () => {
     const dir = await newNotebook();
     const bare = await makeBareRemote();
     await initNotebook(dir, { remote: bare });
-    await createEntry(dir, input());
+    await createItem(dir, "page", input(), "<p>Body.</p>");
     const other = join(await makeTempDir(), "other");
     await git(dirname(other), ["clone", "-q", bare, other]);
     await git(other, ["commit", "-q", "--allow-empty", "-m", "remote change"]);
@@ -151,7 +151,7 @@ describe("attemptBackup", () => {
     const remoteBefore = await git(bare, ["rev-parse", "main"]);
 
     await git(dir, ["config", "remote.origin.push", "+HEAD:refs/heads/main"]);
-    const created = await createEntry(dir, input());
+    const created = await createItem(dir, "page", input(), "<p>Body.</p>");
     assert.deepEqual(created.backup, {
       status: "pending",
       reason: "push_failed",
@@ -163,13 +163,14 @@ describe("attemptBackup", () => {
     const dir = await newNotebook();
     const bare = await makeBareRemote();
     await initNotebook(dir, { remote: bare });
-    await createEntry(dir, input());
+    await createItem(dir, "page", input(), "<p>Body.</p>");
     await git(dir, ["checkout", "-q", "-b", "leak"]);
+    await mkdir(join(dir, "notes"), { recursive: true });
     await writeFile(
-      join(dir, "entries", "leak.md"),
+      join(dir, "notes", "leak.md"),
       `---\ntitle: "Leak"\n---\nKey: ${SECRET_TOKEN}\n`,
     );
-    await git(dir, ["add", "--", "entries/leak.md"]);
+    await git(dir, ["add", "--", "notes/leak.md"]);
     await git(dir, ["commit", "-q", "-m", "leak"]);
     await git(dir, ["checkout", "-q", "main"]);
     await git(dir, [
@@ -179,7 +180,7 @@ describe("attemptBackup", () => {
       "refs/heads/leak:refs/heads/leak",
     ]);
 
-    const created = await createEntry(dir, input());
+    const created = await createItem(dir, "page", input(), "<p>Body.</p>");
     assert.deepEqual(created.backup, { status: "pushed" });
     await assert.rejects(
       git(bare, ["rev-parse", "--verify", "-q", "refs/heads/leak"]),
@@ -190,11 +191,11 @@ describe("attemptBackup", () => {
     const dir = await newNotebook();
     const bare = await makeBareRemote();
     await initNotebook(dir, { remote: bare });
-    await createEntry(dir, input());
+    await createItem(dir, "page", input(), "<p>Body.</p>");
     const remoteBefore = await git(bare, ["rev-parse", "main"]);
 
     await git(dir, ["config", "remote.origin.mirror", "true"]);
-    const created = await createEntry(dir, input());
+    const created = await createItem(dir, "page", input(), "<p>Body.</p>");
     assert.deepEqual(created.backup, {
       status: "pending",
       reason: "push_failed",
@@ -206,23 +207,25 @@ describe("attemptBackup", () => {
     const dir = await newNotebook();
     const bare = await makeBareRemote();
     await initNotebook(dir, { remote: bare });
-    await createEntry(dir, input());
+    await createItem(dir, "page", input(), "<p>Body.</p>");
     const remoteBefore = await git(bare, ["rev-parse", "main"]);
 
     await git(dir, ["checkout", "-q", "-b", "side"]);
-    await writeFile(join(dir, "entries", "shared.md"), "side\n");
-    await git(dir, ["add", "--", "entries/shared.md"]);
+    await mkdir(join(dir, "notes"), { recursive: true });
+    await writeFile(join(dir, "notes", "shared.md"), "side\n");
+    await git(dir, ["add", "--", "notes/shared.md"]);
     await git(dir, ["commit", "-q", "-m", "side"]);
     await git(dir, ["checkout", "-q", "main"]);
-    await writeFile(join(dir, "entries", "shared.md"), "main\n");
-    await git(dir, ["add", "--", "entries/shared.md"]);
+    await mkdir(join(dir, "notes"), { recursive: true });
+    await writeFile(join(dir, "notes", "shared.md"), "main\n");
+    await git(dir, ["add", "--", "notes/shared.md"]);
     await git(dir, ["commit", "-q", "-m", "main"]);
     await assert.rejects(git(dir, ["merge", "--no-edit", "side"]));
     await writeFile(
-      join(dir, "entries", "shared.md"),
+      join(dir, "notes", "shared.md"),
       `---\ntitle: "Merged"\n---\nKey: ${SECRET_TOKEN}\n`,
     );
-    await git(dir, ["add", "--", "entries/shared.md"]);
+    await git(dir, ["add", "--", "notes/shared.md"]);
     await git(dir, ["commit", "-q", "--no-edit"]);
 
     assert.deepEqual(await attemptBackup(dir), {
@@ -236,17 +239,17 @@ describe("attemptBackup", () => {
     const dir = await newNotebook();
     const bare = await makeBareRemote();
     await initNotebook(dir, { remote: bare });
-    await mkdir(join(dir, "entries"), { recursive: true });
-    const path = join(dir, "entries", "typechange.md");
+    await mkdir(join(dir, "notes"), { recursive: true });
+    const path = join(dir, "notes", "typechange.md");
     await symlink("../README.md", path);
-    await git(dir, ["add", "--", "entries/typechange.md"]);
+    await git(dir, ["add", "--", "notes/typechange.md"]);
     await git(dir, ["commit", "-q", "-m", "symlink"]);
     assert.deepEqual(await attemptBackup(dir), { status: "pushed" });
     const remoteBefore = await git(bare, ["rev-parse", "main"]);
 
     await rm(path);
     await writeFile(path, `Key: ${SECRET_TOKEN}\n`);
-    await git(dir, ["add", "--", "entries/typechange.md"]);
+    await git(dir, ["add", "--", "notes/typechange.md"]);
     await git(dir, ["commit", "-q", "-m", "typechange"]);
 
     assert.deepEqual(await attemptBackup(dir), {
@@ -260,10 +263,10 @@ describe("attemptBackup", () => {
     const dir = await newNotebook();
     const bare = await makeBareRemote();
     await initNotebook(dir, { remote: bare });
-    await createEntry(dir, input());
+    await createItem(dir, "page", input(), "<p>Body.</p>");
     await git(dir, ["tag", "main"]);
 
-    const created = await createEntry(dir, input());
+    const created = await createItem(dir, "page", input(), "<p>Body.</p>");
     assert.deepEqual(created.backup, { status: "pushed" });
     assert.equal(
       await git(bare, ["rev-parse", "refs/heads/main"]),
@@ -278,14 +281,14 @@ describe("attemptBackup", () => {
     const dir = await newNotebook();
     const bare = await makeBareRemote();
     await initNotebook(dir, { remote: bare });
-    await createEntry(dir, input());
+    await createItem(dir, "page", input(), "<p>Body.</p>");
     const remoteBefore = await git(bare, ["rev-parse", "main"]);
 
     const previous = process.env.PATH;
     process.env.PATH = `${await makeFailingRevListGit()}${delimiter}${previous}`;
-    let created: Awaited<ReturnType<typeof createEntry>>;
+    let created: Awaited<ReturnType<typeof createItem>>;
     try {
-      created = await createEntry(dir, input());
+      created = await createItem(dir, "page", input(), "<p>Body.</p>");
     } finally {
       process.env.PATH = previous;
     }

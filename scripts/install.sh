@@ -1,5 +1,5 @@
 #!/bin/sh
-# Opt-in installer for notebook. Run it yourself; it never edits shell profiles or OpenCode
+# Opt-in installer for notebook. Run it yourself; it never edits shell profiles or agent
 # config and never overwrites a different existing file.
 set -eu
 
@@ -11,7 +11,8 @@ Usage: scripts/install.sh [--dry-run] [--help]
 
 Installs notebook for the current user:
   ~/.local/bin/notebook                        symlink to this checkout's bin/notebook
-  ~/.config/opencode/skills/notebook/          copy of skills/notebook/ (SKILL.md and references/)
+  ~/.claude/skills/notebook/                  skill for Claude Code (SKILL.md and references/)
+  ~/.codex/skills/notebook/                   skill for Codex (SKILL.md and references/)
   ~/notebook (or $NOTEBOOK_DIR)                created with 'notebook init' if missing
 
 Existing files that differ are refused, not overwritten. Running it again is safe.
@@ -63,7 +64,6 @@ fi
 bin_dir="$HOME/.local/bin"
 link="$bin_dir/notebook"
 target="$repo/bin/notebook"
-skill_dir="$HOME/.config/opencode/skills/notebook"
 notebook_dir=${NOTEBOOK_DIR:-$HOME/notebook}
 
 if [ -e "$bin_dir" ] && [ ! -d "$bin_dir" ]; then
@@ -92,21 +92,19 @@ for file in "$skill_src_dir"/references/*; do
   skill_files="$skill_files references/${file##*/}"
 done
 
-skill_state=same
-skill_missing=""
-for rel in $skill_files; do
-  src="$skill_src_dir/$rel"
-  dst="$skill_dir/$rel"
-  if [ -L "$dst" ]; then
-    die "$dst already exists and differs from the bundled skill; move it aside and run again"
-  elif [ -e "$dst" ]; then
-    if [ ! -f "$dst" ] || ! cmp -s "$src" "$dst"; then
+# Check both destinations before making any changes.
+for skill_dir in "$HOME/.claude/skills/notebook" "$HOME/.codex/skills/notebook"; do
+  for rel in $skill_files; do
+    src="$skill_src_dir/$rel"
+    dst="$skill_dir/$rel"
+    if [ -L "$dst" ]; then
       die "$dst already exists and differs from the bundled skill; move it aside and run again"
+    elif [ -e "$dst" ]; then
+      if [ ! -f "$dst" ] || ! cmp -s "$src" "$dst"; then
+        die "$dst already exists and differs from the bundled skill; move it aside and run again"
+      fi
     fi
-  else
-    skill_state=missing
-    skill_missing="$skill_missing $rel"
-  fi
+  done
 done
 
 nb_state=missing
@@ -135,20 +133,23 @@ case $link_state in
     ;;
 esac
 
-case $skill_state in
-  same) printf 'Skill: already installed (%s)\n' "$skill_dir" ;;
-  missing)
-    for rel in $skill_missing; do
-      if [ "$DRY_RUN" = 1 ]; then
-        printf '[dry-run] would copy %s to %s\n' "$skill_src_dir/$rel" "$skill_dir/$rel"
-      else
-        mkdir -p "$(dirname -- "$skill_dir/$rel")"
-        cp "$skill_src_dir/$rel" "$skill_dir/$rel"
-        printf 'Skill: installed %s\n' "$skill_dir/$rel"
-      fi
-    done
-    ;;
-esac
+for skill_dir in "$HOME/.claude/skills/notebook" "$HOME/.codex/skills/notebook"; do
+  skill_state=same
+  for rel in $skill_files; do
+    [ -f "$skill_dir/$rel" ] && continue
+    skill_state=missing
+    if [ "$DRY_RUN" = 1 ]; then
+      printf '[dry-run] would copy %s to %s\n' "$skill_src_dir/$rel" "$skill_dir/$rel"
+    else
+      mkdir -p "$(dirname -- "$skill_dir/$rel")"
+      cp "$skill_src_dir/$rel" "$skill_dir/$rel"
+      printf 'Skill: installed %s\n' "$skill_dir/$rel"
+    fi
+  done
+  if [ "$skill_state" = same ]; then
+    printf 'Skill: already installed (%s)\n' "$skill_dir"
+  fi
+done
 
 case $nb_state in
   exists) printf 'Notebook: %s already exists; not changed\n' "$notebook_dir" ;;
@@ -180,7 +181,7 @@ Next steps:
   1. Optional backup: create a private repository, then run:
        git -C "$notebook_dir" remote add origin <private-repo-url>
        notebook backup
-     Use a private repository only; entries can contain personal notes.
-  2. Restart your agent session (OpenCode or T3 Code) so it discovers the notebook skill.
+     Use a private repository only; pages and prompts can contain private information.
+  2. Restart your agent session (Claude Code or Codex) so it discovers the notebook skill.
   3. Check the setup with: notebook status
 EOF

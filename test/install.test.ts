@@ -34,6 +34,7 @@ interface Sandbox {
   env: NodeJS.ProcessEnv;
   link: string;
   skill: string;
+  codexSkill: string;
   notebook: string;
 }
 
@@ -55,7 +56,8 @@ async function newSandbox(): Promise<Sandbox> {
     home,
     env,
     link: join(home, ".local", "bin", "notebook"),
-    skill: join(home, ".config", "opencode", "skills", "notebook", "SKILL.md"),
+    skill: join(home, ".claude", "skills", "notebook", "SKILL.md"),
+    codexSkill: join(home, ".codex", "skills", "notebook", "SKILL.md"),
     notebook: join(home, "notebook"),
   };
 }
@@ -113,6 +115,10 @@ describe("scripts/install.sh", () => {
     assert.match(result.stdout, /nothing was changed/);
     assert.equal(exists(join(sandbox.home, ".local")), false);
     assert.equal(exists(join(sandbox.home, ".config")), false);
+    assert.equal(exists(join(sandbox.home, ".claude")), false);
+    assert.equal(exists(join(sandbox.home, ".codex")), false);
+    assert.ok(result.stdout.includes(sandbox.skill));
+    assert.ok(result.stdout.includes(sandbox.codexSkill));
     assert.equal(exists(sandbox.notebook), false);
   });
 
@@ -122,16 +128,19 @@ describe("scripts/install.sh", () => {
     assert.equal(result.code, 0, result.stderr);
     assert.equal(lstatSync(sandbox.link).isSymbolicLink(), true);
     assert.equal(readlinkSync(sandbox.link), BIN);
-    assert.equal(
-      readFileSync(sandbox.skill, "utf8"),
-      readFileSync(SKILL_SRC, "utf8"),
-    );
-    for (const name of readdirSync(REFERENCES_SRC)) {
+    for (const skill of [sandbox.skill, sandbox.codexSkill]) {
       assert.equal(
-        readFileSync(join(sandbox.skill, "..", "references", name), "utf8"),
-        readFileSync(join(REFERENCES_SRC, name), "utf8"),
+        readFileSync(skill, "utf8"),
+        readFileSync(SKILL_SRC, "utf8"),
       );
+      for (const name of readdirSync(REFERENCES_SRC)) {
+        assert.equal(
+          readFileSync(join(skill, "..", "references", name), "utf8"),
+          readFileSync(join(REFERENCES_SRC, name), "utf8"),
+        );
+      }
     }
+    assert.equal(exists(join(sandbox.home, ".config", "opencode")), false);
     assert.equal(existsSync(join(sandbox.notebook, ".git")), true);
     assert.match(result.stdout, /next steps/i);
     assert.match(result.stdout, /restart/i);
@@ -193,6 +202,19 @@ describe("scripts/install.sh", () => {
     assert.notEqual(result.code, 0);
     assert.match(result.stderr, /differs from the bundled skill/);
     assert.equal(readFileSync(sandbox.skill, "utf8"), "my own skill\n");
+    assert.equal(exists(sandbox.link), false);
+    assert.equal(exists(sandbox.notebook), false);
+  });
+
+  it("checks Codex conflicts before installing anything for Claude Code", async () => {
+    const sandbox = await newSandbox();
+    mkdirSync(join(sandbox.codexSkill, ".."), { recursive: true });
+    writeFileSync(sandbox.codexSkill, "my Codex skill\n");
+    const result = await install([], sandbox.env);
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /differs from the bundled skill/);
+    assert.equal(readFileSync(sandbox.codexSkill, "utf8"), "my Codex skill\n");
+    assert.equal(exists(sandbox.skill), false);
     assert.equal(exists(sandbox.link), false);
     assert.equal(exists(sandbox.notebook), false);
   });

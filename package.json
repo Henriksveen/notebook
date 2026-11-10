@@ -7,19 +7,17 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "node --test --test-concurrency=4 test/*.test.ts",
+    "test": "node scripts/test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "test:e2e": "node scripts/e2e.ts"
+    "test:e2e": "node scripts/test.ts test/library-e2e.test.ts test/open.test.ts test/web.test.ts"
   },
   "dependencies": {
-    "markdown-it": "^15.0.3",
     "sanitize-html": "^2.18.1",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",
-    "@types/markdown-it": "^14.2.0",
     "@types/node": "^24.19.2",
     "@types/sanitize-html": "^2.16.2",
     "typescript": "^7.0.2"

@@ -42,12 +42,12 @@ describe("repoState", () => {
 describe("dirtyPaths", () => {
   it("reports untracked, modified, and staged files under the given paths", async () => {
     const dir = await newNotebook();
-    await mkdir(join(dir, "entries"));
-    await writeFile(join(dir, "entries", "new.md"), "x");
+    await mkdir(join(dir, "notes"));
+    await writeFile(join(dir, "notes", "new.md"), "x");
     await writeFile(join(dir, "README.md"), "changed\n");
     await writeFile(join(dir, "other.txt"), "staged\n");
     await git(dir, ["add", "other.txt"]);
-    assert.deepEqual(await dirtyPaths(dir, ["entries"]), ["entries/new.md"]);
+    assert.deepEqual(await dirtyPaths(dir, ["notes"]), ["notes/new.md"]);
     assert.deepEqual(await dirtyPaths(dir, ["README.md", "other.txt"]), [
       "README.md",
       "other.txt",
@@ -56,9 +56,9 @@ describe("dirtyPaths", () => {
 
   it("treats pathspecs literally, so globs do not match", async () => {
     const dir = await newNotebook();
-    await mkdir(join(dir, "entries"));
-    await writeFile(join(dir, "entries", "abc.md"), "x");
-    assert.deepEqual(await dirtyPaths(dir, ["entries/a*"]), []);
+    await mkdir(join(dir, "notes"));
+    await writeFile(join(dir, "notes", "abc.md"), "x");
+    assert.deepEqual(await dirtyPaths(dir, ["notes/a*"]), []);
   });
 });
 

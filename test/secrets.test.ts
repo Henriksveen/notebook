@@ -2,11 +2,16 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   type SecretFinding,
-  scanAttachment,
-  scanEntry,
+  scanDocument,
+  scanFile,
   scanText,
 } from "../src/secrets.ts";
-import { makeEntry } from "./fixtures.ts";
+
+const makeMetadata = (changes: Record<string, unknown> = {}) => ({
+  title: "Safe",
+  sources: [],
+  ...changes,
+});
 
 const SAMPLES: Record<string, string> = {
   "private-key": "-----BEGIN OPENSSH PRIVATE KEY-----",
@@ -142,28 +147,28 @@ describe("scanText performance", () => {
   });
 });
 
-describe("scanEntry", () => {
-  it("scans front matter fields and the body with field locations", () => {
-    const entry = makeEntry({
+describe("scanDocument", () => {
+  it("scans metadata fields and the body with field locations", () => {
+    const entry = makeMetadata({
       title: `Leaked ${SAMPLES["openai-key"]}`,
       sources: [{ kind: "url", url: "https://alice:s3cretpass@example.com" }],
     });
-    const findings = scanEntry(entry, `Notes\n${SAMPLES.jwt}\n`);
+    const findings = scanDocument(entry, `Notes\n${SAMPLES.jwt}\n`);
     const locations = findings.map((finding) => finding.location);
-    assert.ok(locations.includes("frontmatter:title"));
-    assert.ok(locations.includes("frontmatter:sources[0].url"));
+    assert.ok(locations.includes("metadata:title"));
+    assert.ok(locations.includes("metadata:sources[0].url"));
     assert.ok(locations.includes("body:line 2"));
   });
 
-  it("returns no findings for a clean entry", () => {
-    assert.deepEqual(scanEntry(makeEntry(), "Plain body.\n"), []);
+  it("returns no findings for a clean document", () => {
+    assert.deepEqual(scanDocument(makeMetadata(), "Plain body.\n"), []);
   });
 
   it("never includes matched secret text in findings", () => {
     const secrets = [SAMPLES["openai-key"], SAMPLES.jwt, "hunter2hunter2"];
-    const entry = makeEntry({ title: `t ${secrets[0]}` });
+    const entry = makeMetadata({ title: `t ${secrets[0]}` });
     const findings: SecretFinding[] = [
-      ...scanEntry(entry, `${secrets[1]}\npassword: hunter2hunter2\n`),
+      ...scanDocument(entry, `${secrets[1]}\npassword: hunter2hunter2\n`),
     ];
     assert.ok(findings.length >= 3);
     const serialized = JSON.stringify(findings);
@@ -173,17 +178,17 @@ describe("scanEntry", () => {
   });
 });
 
-describe("scanAttachment", () => {
+describe("scanFile", () => {
   it("scans text-like bytes", () => {
     const bytes = new TextEncoder().encode(`config\n${SAMPLES.jwt}\n`);
-    assert.deepEqual(scanAttachment("notes.txt", bytes), [
-      { rule: "jwt", location: "attachment:content:line 2" },
+    assert.deepEqual(scanFile("notes.txt", bytes), [
+      { rule: "jwt", location: "file:content:line 2" },
     ]);
   });
 
   it("does not scan binary bytes containing NUL", () => {
     const bytes = new TextEncoder().encode(`\0${SAMPLES.jwt}`);
-    assert.deepEqual(scanAttachment("blob.bin", bytes), []);
+    assert.deepEqual(scanFile("blob.bin", bytes), []);
   });
 
   it("does not scan invalid UTF-8", () => {
@@ -192,17 +197,19 @@ describe("scanAttachment", () => {
       0xfe,
       ...new TextEncoder().encode(SAMPLES.jwt),
     ]);
-    assert.deepEqual(scanAttachment("blob.dat", bytes), []);
+    assert.deepEqual(scanFile("blob.dat", bytes), []);
   });
 
   it("scans the original file name without echoing it", () => {
-    const findings = scanAttachment(
-      `${SAMPLES["openai-key"]}.txt`,
-      new Uint8Array(),
-    );
+    const findings = scanFile(`${SAMPLES["openai-key"]}.txt`, new Uint8Array());
     assert.deepEqual(findings, [
-      { rule: "openai-key", location: "attachment:filename" },
+      { rule: "openai-key", location: "file:filename" },
     ]);
     assert.equal(JSON.stringify(findings).includes("sk-"), false);
   });
+});
+
+it("forces scanning for known text file extensions even with binary-looking bytes", () => {
+  const bytes = new TextEncoder().encode(`\0${SAMPLES.jwt}`);
+  assert.equal(scanFile("note.md", bytes, true)[0].rule, "jwt");
 });

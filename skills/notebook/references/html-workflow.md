@@ -8,10 +8,10 @@ yourself unless you need to check its work.
 
 ## 1. Delegate the generation
 
-Generate the HTML in a subagent that runs exactly the model `github-copilot/claude-opus-5.5`,
-using the harness's subagent mechanism. Do not write the page yourself. If that model is
-unavailable or cannot be selected, STOP and ask the user. Never substitute another model, and
-save nothing until the user answers.
+Generate the HTML using the harness's subagent mechanism with either the `claude` provider
+(Opus 5.5) or the `codex` provider (an available Codex model). Do not use the GitHub Copilot
+provider or write the page yourself. If neither allowed provider and model is available or can
+be selected, STOP and ask the user. Save nothing until the user answers.
 
 ## 2. Brief the subagent
 
@@ -54,31 +54,48 @@ Confirm that the file exists, ends with `.html`, and is at most 20 MiB. Inspect 
 If you find problems, send them back to the same subagent (same model) to fix. After two failed
 rounds, stop and tell the user. This is a practical self-containment check, not a security audit.
 
-## 4. Save
+## 4. Publish or update a first-class page
 
-Create the Markdown entry (type usually `report`). The body summarizes what the page shows, the
-key numbers or findings, and how the data was produced. Then attach the file:
+Search first with `notebook page search "<concept>" --json`. When updating, read
+`notebook page read <id> --json` and supply its current HTML, metadata, relevant
+supporting context, revision, and user preservation requirements to the subagent.
+Do not generate an update from a summary alone. If several pages match, clarify.
+
+For creation, write a temporary JSON input with `title`, `summary`, `kind`
+(`concept` or `report`), optional `project`, `topics`, `sources`, and `context`.
+Use real source references. The CLI publishes HTML and its metadata together.
 
 ```sh
-notebook attach <id> --expected-revision <rev> --file /tmp/<name>.html --name <descriptive-name>.html --json
+notebook page create --input /tmp/page.json --html /tmp/page.html --json
 ```
 
-Read the entry, then `update` its body with the revision from `attach`, adding a line near the
-top such as `[Open the interactive report](attachment:<attachment-id>)`. Always use the latest
-revision from each result.
+For updates, pass only changed metadata/context and a required `change_summary`.
+Omitted fields are preserved; `context: null` explicitly removes supporting context.
+Use the revision from the latest read. Metadata-only updates can omit `--html`.
 
-## 5. Viewer link
+```sh
+notebook page update <id> --expected-revision <revision> --input /tmp/patch.json --html /tmp/page.html --json
+```
 
-Build it from the entry URL the CLI returned: replace `/entries/<id>` with
-`/attachments/<id>/<attachment-id>/view`. Do not hard-code the port. Report it alongside the
-entry URL, and say that it works only while the local website runs (`notebook open`).
+Preserve existing explanations and working interactions unless the user requests
+replacement or redesign. Check a requested example was added and an existing
+interaction still works. Reconcile contradictory facts rather than silently
+appending them. The CLI cannot prove semantic preservation: inspect the result.
+Never silently regenerate a page after a saved prompt changes.
 
-## 6. Regenerate or update
+## 5. Report the stable link
 
-Do not create a new entry. Find and `read` the existing entry, repeat steps 1-3 for the new
-file, then attach it to that entry as a NEW attachment with a descriptive name (include a date
-or version). `update` the existing entry's body with the revision from `attach` so the link
-points at the new attachment, and keep a short line about the earlier version if useful. Never
-try to delete or replace files in the notebook directory; older versions remain.
+Return the `data.url` from the command directly. It stays the same across updates.
+Report the change summary and backup status. The link works while the local
+website runs (`notebook open`); do not start it unless asked.
 
-Optionally delete the temporary file after a successful attach.
+## 6. Revisions and recovery
+
+History is available with `notebook page history <id> --json`. Restore only on
+request, with `page restore <id> --commit <commit> --expected-revision <current>
+--json`. This creates a new revision; never run Git resets or delete old files.
+
+If the CLI reports a recovery conflict, stop and report the affected paths; do
+not edit its journal or overwrite possible user changes. Delete temporary output
+only after a successful publication. For browsing and history, see
+`library-commands.md`.

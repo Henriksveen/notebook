@@ -1,5 +1,4 @@
 import { basename } from "node:path";
-import type { Entry } from "./schema.ts";
 
 export interface SecretFinding {
   rule: string;
@@ -197,11 +196,11 @@ function scanValue(value: string, location: string): SecretFinding[] {
   return rules.map((rule) => ({ rule, location }));
 }
 
-export function scanEntry(entry: Entry, body: string): SecretFinding[] {
-  const frontMatter = Object.entries(entry).flatMap(([key, value]) =>
-    scanNode(value, `frontmatter:${key}`),
+export function scanDocument(metadata: object, body: string): SecretFinding[] {
+  const metadataFindings = Object.entries(metadata).flatMap(([key, value]) =>
+    scanNode(value, `metadata:${key}`),
   );
-  return [...frontMatter, ...scanText(body, "body")];
+  return [...metadataFindings, ...scanText(body, "body")];
 }
 
 function scanNode(value: unknown, location: string): SecretFinding[] {
@@ -228,12 +227,15 @@ export function decodeTextLike(bytes: Uint8Array): string | undefined {
   }
 }
 
-export function scanAttachment(
+export function scanFile(
   filename: string,
   bytes: Uint8Array,
+  forceText = false,
 ): SecretFinding[] {
-  const nameFindings = scanValue(basename(filename), "attachment:filename");
-  const text = decodeTextLike(bytes);
+  const nameFindings = scanValue(basename(filename), "file:filename");
+  const text = forceText
+    ? Buffer.from(bytes).toString("utf8")
+    : decodeTextLike(bytes);
   if (text === undefined) return nameFindings;
-  return [...nameFindings, ...scanText(text, "attachment:content")];
+  return [...nameFindings, ...scanText(text, "file:content")];
 }

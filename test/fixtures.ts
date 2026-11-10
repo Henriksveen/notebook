@@ -1,12 +1,10 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { type AddressInfo, createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { serializeEntry } from "../src/frontmatter.ts";
 import { initNotebook } from "../src/notebook.ts";
-import type { Entry } from "../src/schema.ts";
 
 process.env.GIT_AUTHOR_NAME ??= "Notebook Test";
 process.env.GIT_AUTHOR_EMAIL ??= "test@example.invalid";
@@ -57,24 +55,6 @@ export async function makeBareRemote(): Promise<string> {
   return bare;
 }
 
-export function makeEntry(overrides: Partial<Entry> = {}): Entry {
-  return {
-    schema_version: 1,
-    id: ID_1,
-    title: "Sample entry",
-    summary: "A short summary.",
-    project: "Inbox",
-    topics: ["architecture"],
-    type: "research",
-    created_at: STAMP,
-    updated_at: STAMP,
-    status: "draft",
-    sources: [],
-    attachments: [],
-    ...overrides,
-  };
-}
-
 const tempDirs: string[] = [];
 
 export async function makeTempDir(): Promise<string> {
@@ -88,20 +68,6 @@ export async function cleanupTempDirs(): Promise<void> {
   await Promise.all(
     dirs.map((dir) => rm(dir, { recursive: true, force: true })),
   );
-}
-
-export async function writeEntryFile(
-  dir: string,
-  entry: Entry,
-  body = "Body text.\n",
-): Promise<string> {
-  const result = serializeEntry({ entry, body });
-  if (!result.ok)
-    throw new Error(`fixture invalid: ${JSON.stringify(result.errors)}`);
-  await mkdir(join(dir, "entries"), { recursive: true });
-  const file = join(dir, "entries", `${entry.id}.md`);
-  await writeFile(file, result.value);
-  return file;
 }
 
 export async function freePort(): Promise<number> {

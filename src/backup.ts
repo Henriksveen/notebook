@@ -9,7 +9,7 @@ import {
   unpublishedCommits,
 } from "./git.ts";
 import { runtimeDir } from "./lock.ts";
-import { scanAttachment, scanText } from "./secrets.ts";
+import { scanFile } from "./secrets.ts";
 
 export type BackupStatus = "pushed" | "pending" | "blocked";
 export type BackupReason =
@@ -88,9 +88,11 @@ async function containsSecret(
   path: string,
 ): Promise<boolean> {
   const bytes = await readBlob(dir, commit, path);
-  const findings = path.startsWith("entries/")
-    ? scanText(bytes.toString("utf8"), path)
-    : scanAttachment(basename(path), bytes);
+  const findings = scanFile(
+    basename(path),
+    bytes,
+    /\.(?:md|html|yaml|yml|json|txt|csv|js|ts|css|xml)$/i.test(path),
+  );
   return findings.length > 0;
 }
 

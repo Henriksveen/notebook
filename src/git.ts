@@ -125,9 +125,10 @@ export async function commitPaths(
   dir: string,
   paths: string[],
   message: string,
+  alreadyStaged = false,
 ): Promise<void> {
   await ensureIdentity(dir);
-  await mustRun(dir, ["add", "--", ...paths]);
+  if (!alreadyStaged) await mustRun(dir, ["add", "--", ...paths]);
   await mustRun(dir, [
     "commit",
     "--only",
@@ -205,16 +206,7 @@ export async function changedNotebookFiles(
   if (parents === undefined) throw new Error("git show failed");
   const isMerge = parents.split(" ").filter((hash) => hash !== "").length > 1;
   const result = isMerge
-    ? await run(dir, [
-        "ls-tree",
-        "-r",
-        "-z",
-        "--name-only",
-        commit,
-        "--",
-        "entries",
-        "attachments",
-      ])
+    ? await run(dir, ["ls-tree", "-r", "-z", "--name-only", commit, "--"])
     : await run(dir, [
         "diff-tree",
         "--root",
@@ -226,8 +218,6 @@ export async function changedNotebookFiles(
         "-z",
         commit,
         "--",
-        "entries",
-        "attachments",
       ]);
   if (!result.ok) throw new Error("git could not list notebook files");
   return splitNul(result.stdout);
@@ -316,4 +306,31 @@ function killGroup(pid: number | undefined): void {
   } catch {
     // The process group has already exited.
   }
+}
+
+// Internal library callers construct arguments and fixed paths; never pass Git expressions from input.
+export async function gitBytes(dir: string, args: string[]): Promise<Buffer> {
+  const result = await run(dir, args);
+  if (!result.ok)
+    throw new NotebookError("REPO_STATE", "could not read or update Git state");
+  return result.stdout;
+}
+export async function reachableCommit(
+  dir: string,
+  commit?: string,
+): Promise<string> {
+  const head = await headCommit(dir);
+  if (!head)
+    throw new NotebookError("REPO_STATE", "notebook has no committed state");
+  if (commit === undefined) return head;
+  if (
+    !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(commit) ||
+    !(await run(dir, ["merge-base", "--is-ancestor", commit, head])).ok
+  ) {
+    throw new NotebookError(
+      "NOT_FOUND",
+      "version is not reachable from this notebook",
+    );
+  }
+  return commit;
 }

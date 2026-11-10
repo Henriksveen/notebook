@@ -9,14 +9,12 @@ import { join } from "node:path";
 import { after, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { createItem } from "../src/library.ts";
 import {
   cleanupTempDirs,
   freePort,
-  ID_1,
-  makeEntry,
   makeTempDir,
   newNotebook,
-  writeEntryFile,
 } from "./fixtures.ts";
 
 const execFileAsync = promisify(execFile);
@@ -121,17 +119,17 @@ describe("open and serve commands", () => {
     );
   });
 
-  it("open validates its ID", async () => {
+  it("page open validates its ID", async () => {
     const dir = await newNotebook();
     const env = await sandboxEnv();
     const invalid = await run(
-      ["--dir", dir, "--json", "open", "not-an-id", "--no-browser"],
+      ["--dir", dir, "--json", "page", "open", "not-an-id", "--no-browser"],
       env,
     );
     assert.equal(invalid.code, 2);
     assert.equal((envelope(invalid).error as { code: string }).code, "USAGE");
     const missing = await run(
-      ["--dir", dir, "--json", "open", MISSING, "--no-browser"],
+      ["--dir", dir, "--json", "page", "open", MISSING, "--no-browser"],
       env,
     );
     assert.equal(missing.code, 1);
@@ -141,9 +139,14 @@ describe("open and serve commands", () => {
     );
   });
 
-  it("open starts the website, then reuses it, and links to entries", async () => {
+  it("open starts the website, then reuses it, and links to pages", async () => {
     const dir = await newNotebook();
-    await writeEntryFile(dir, makeEntry({ id: ID_1 }));
+    const page = await createItem(
+      dir,
+      "page",
+      { title: "Page", summary: "A page", kind: "concept" },
+      "<p>Hello</p>",
+    );
     const port = await freePort();
     servers.push({ dir, port });
     const env = await sandboxEnv();
@@ -165,15 +168,16 @@ describe("open and serve commands", () => {
         "--json",
         "--port",
         String(port),
+        "page",
         "open",
-        ID_1,
+        page.id,
         "--no-browser",
       ],
       env,
     );
     assert.equal(second.code, 0, second.stderr);
     assert.deepEqual(envelope(second).data, {
-      url: `http://127.0.0.1:${port}/entries/${ID_1}`,
+      url: `http://127.0.0.1:${port}/pages/${page.id}`,
       reused: true,
     });
     assert.equal(await servingCount(dir, port), 1);

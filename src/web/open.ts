@@ -3,7 +3,7 @@ import { open as openFile } from "node:fs/promises";
 import { get as httpGet } from "node:http";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { entryUrl, homeUrl } from "../config.ts";
+import { homeUrl } from "../config.ts";
 import { NotebookError } from "../errors.ts";
 import { runtimeDir, withLock } from "../lock.ts";
 import { assertSafePath } from "../paths.ts";
@@ -19,7 +19,7 @@ const LOG_NAME = "server.log";
 export interface OpenOptions {
   dir: string;
   port: number;
-  entryId?: string;
+  itemPath?: string;
   noBrowser?: boolean;
   opener?: (url: string) => Promise<void>;
 }
@@ -38,8 +38,8 @@ type Probe =
 
 export async function openNotebook(options: OpenOptions): Promise<OpenResult> {
   const fingerprint = await fingerprintOf(options.dir);
-  const url = options.entryId
-    ? entryUrl(options.entryId, options.port)
+  const url = options.itemPath
+    ? `http://127.0.0.1:${options.port}${options.itemPath}`
     : homeUrl(options.port);
   const warnings: string[] = [];
   let outcome: { reused: boolean; pid?: number };

@@ -1,437 +1,250 @@
 # Notebook
 
-A personal, private, local-first knowledge notebook. Agents save standalone Markdown
-entries through a command-line tool on your explicit request, and the entries live in a plain
-git repository that you own. A read-only local website lets you browse them (see [Website](#website)).
-
-Nothing is captured automatically. An agent saves, searches, or changes an entry only when you
-ask it to.
+A private, local-first library of interactive HTML explanations and reusable
+prompts. Create and deepen pages in Claude/Codex, then revisit them through a local
+website. Plain files and Git keep the content and its history on your machine.
+Nothing is captured automatically.
 
 ## Requirements
 
-- Node.js 24 or newer (the tool runs its TypeScript sources directly).
-- git.
-- `flock` (util-linux on Linux; used for the write lock).
-- `xdg-open` if you want `notebook open` to launch your browser. Without it the URL is printed.
+- Node.js 24 or newer; TypeScript runs directly with no build step.
+- Git and `flock` (util-linux).
+- `xdg-open` to launch a browser automatically; otherwise open the printed URL.
 
 ## Install
 
-From a checkout of this repository:
+From this checkout:
 
 ```sh
-scripts/install.sh --dry-run    # print what would happen; changes nothing
-scripts/install.sh              # install
-```
-
-The installer is opt-in and does exactly this:
-
-- Links `~/.local/bin/notebook` to `bin/notebook` in this checkout.
-- Copies `skills/notebook/` (`SKILL.md` and its `references/` folder) to
-  `~/.config/opencode/skills/notebook/`, so your OpenCode and T3 Code agents can use the skill.
-- Runs `notebook init` to create `~/notebook` (or `$NOTEBOOK_DIR`) if that directory does not exist.
-
-It never edits shell profiles or OpenCode configuration, and it never passes a remote to `init`.
-It checks Node, git, and flock before it changes anything. It refuses to overwrite a different
-existing file, and running it again is safe: an installed copy is reported as `already installed`.
-
-If `~/.local/bin` is not on your `PATH`, add it in your shell profile yourself.
-
-After installing, **restart your agent session** (OpenCode or T3 Code) so it discovers the skill.
-
-### Upgrading the skill
-
-The installer refuses to replace differing skill files. After you update `skills/notebook/` in the
-checkout, remove the installed copy and run the installer again:
-
-```sh
-rm -r ~/.config/opencode/skills/notebook
+scripts/install.sh --dry-run
 scripts/install.sh
 ```
 
-### Adding a private backup remote
+The installer links `~/.local/bin/notebook` to this checkout, copies the complete
+notebook skill into `~/.claude/skills/notebook/` and `~/.codex/skills/notebook/`, and
+initializes `~/notebook` (or `$NOTEBOOK_DIR`) if missing. Existing notebooks are
+preserved. It checks prerequisites and refuses differing existing files.
 
-A notebook without a remote keeps everything on your machine, and every change reports
-`backup pending (no_remote)`. To back it up, create an **empty private** repository (for example on
-GitHub, without a README or license), then:
-
-```sh
-git -C ~/notebook remote add origin git@github.com:<you>/<private-repo>.git
-notebook backup
-```
-
-Use a private repository only; entries can contain personal notes. Pushes never prompt for
-credentials (`GIT_TERMINAL_PROMPT=0`, no askpass, 10 s timeout), so the remote must already work
-non-interactively, for example with an SSH key that needs no passphrase prompt or with a stored
-HTTPS credential. A push only sends the current branch to `refs/heads/<branch>` on `origin`, never
-forces, and ignores any extra `remote.origin.push` refspecs; a mirror remote (`remote.origin.mirror`)
-is not pushed to.
-
-You can also set the remote when creating the notebook: `notebook init --remote <url>`.
-
-### Manual uninstall
-
-The tool has no uninstall script. To remove it:
-
-```sh
-rm ~/.local/bin/notebook                              # only if it is the link created by the installer
-rm -r ~/.config/opencode/skills/notebook              # the installed skill
-pgrep -af "cli.ts serve"                              # find a running website, then stop it with kill <pid>
-```
-
-Your entries stay in `~/notebook` until you delete that directory yourself. Remove the `PATH`
-line from your shell profile only if you added one. You can delete the checkout when you no
-longer need it.
+To refresh an installed skill, move its installed folder aside and rerun the
+installer. Restart your Claude/Codex session to discover updated instructions.
+Add `~/.local/bin` to your PATH if necessary; the installer never edits profiles
+or agent configuration.
 
 ## Everyday use
 
-### From an agent
+```sh
+notebook open
+```
 
-Ask in plain language. The skill runs only for explicit requests:
+The website has **Pages** and **Prompts**, both listed newest first with their
+project and a filter that narrows the list as you type; click a project to show
+only its items. Pages open directly in an interactive viewer. Prompts are
+ready-to-copy blocks with a copy button in the corner; templated prompts expand
+inline to fill their inputs. The website browses content and fills/copies
+prompts; creation and changes happen through Claude/Codex or the CLI.
 
-- "Save this to my notebook as a research note." The agent searches for related entries first,
-  saves a draft, and reports the title, URL, status, and backup status.
-- "Search my notebook for ingress timeouts."
-- "Update the notebook entry `<id>` with the new findings."
-- "Mark that entry ready." / "Archive it." / "Restore it."
-- "Attach this diagram to the notebook entry."
-- "Save this as an interactive HTML report in my notebook." The agent has an Opus 5.5 subagent
-  write the page in T3 Code's dark style, attaches it, and gives you a viewer link. If that model is
-  unavailable, the agent stops and asks you. Existing installs need the [skill upgrade](#upgrading-the-skill) to get this.
-- "Open my notebook entry for the deploy plan." (opens the browser)
+Example requests:
 
-Agents save entries as drafts immediately and do not ask for a second confirmation.
+- "Explain Git rebasing visually and save it to my notebook."
+- "Add our conflict-resolution example to my Git rebasing page. Keep the animation."
+- "Save this as a reusable prompt called Explore a concept visually."
+- "Use my Explore a concept visually prompt to explain worktrees."
+- "Show the history of my rebasing page and restore the previous version."
 
-### From the shell
+Copy-and-paste prompt for saving findings:
+
+```text
+Use the notebook skill to save the key findings from this session as an interactive HTML page in my notebook.
+```
+
+A **concept** is a living explanation; a **report** records dated findings. Each
+page has a stable URL, one current HTML document, metadata, and optional supporting
+context for future updates. Context is CLI-readable and excluded from browser
+search and HTML export. Saves publish after validation; restore creates a new
+revision in Git.
+
+## CLI
+
+Every command supports `--dir PATH`, `--port N`, and `--json`. The directory
+defaults to `$NOTEBOOK_DIR`, then `~/notebook`; the port defaults to `$NOTEBOOK_PORT`,
+then `43127`. `notebook --help` lists commands and flags.
 
 ```sh
-notebook init                                     # create ~/notebook (or $NOTEBOOK_DIR)
-notebook create --input entry.json                # or --input - to read JSON from stdin
-notebook search kubernetes --status draft
-notebook read <id>
-notebook status
-notebook backup
-notebook open                                     # website home page in your browser
+notebook init
+notebook status --json
+notebook open --no-browser
+notebook serve
+notebook backup --json
 ```
 
-Use `notebook --help` for the full usage text.
+### Pages
 
-## Command reference
-
-Global options (accepted by every command):
-
-| Option | Meaning |
-| --- | --- |
-| `--dir PATH` | Notebook directory. Default: `$NOTEBOOK_DIR`, then `~/notebook`. |
-| `--json` | Print exactly one JSON object on stdout. |
-| `--port N` | Port used in entry URLs and by the website. Default: `$NOTEBOOK_PORT`, then `43127`. |
-| `--help`, `-h` | Show usage. |
-
-| Command | Purpose |
-| --- | --- |
-| `init [--remote URL]` | Create the notebook (mode 0700, `git init -b main`, README, `.gitignore`, `.notebook-format` marker, first commit). It refuses a non-empty directory that is not already a notebook, so an existing repository is never adopted. If the notebook already exists, it is left in place and `--remote` only adds `origin` when none is set. |
-| `create --input FILE\|-` | Save a new draft from JSON. |
-| `validate (--input FILE\|- \| ID)` | Check a payload or a saved entry without changing anything. |
-| `search [QUERY...] [--project X] [--topic X] [--type X] [--status X] [--include-archived] [--limit N] [--offset N]` | Search entries. Archived entries are excluded unless requested. |
-| `read ID` | Show an entry with its body, revision, URL, and attachments. |
-| `update ID --expected-revision HASH --input FILE\|-` | Change any of `title`, `summary`, `project`, `topics`, `type`, `body`, `sources`. |
-| `ready ID --expected-revision HASH` | Draft → ready. |
-| `archive ID --expected-revision HASH` | Draft or ready → archived. |
-| `restore ID --expected-revision HASH` | Archived → the status it had before. |
-| `attach ID --expected-revision HASH --file PATH [--name NAME]` | Copy a file into the entry (max 20 MiB; symlinks and non-regular files are refused). |
-| `status` | Repository state, remote configured (yes/no, never the URL), unpublished commits, last backup result. |
-| `backup` | Retry pushing unpublished commits. |
-| `open [ID] [--no-browser]` | Start the website if needed, or reuse it, then open the home page or an entry. |
-| `serve` | Run the website in the foreground until Ctrl+C. |
-
-There is no delete command. Archive an entry instead (see [Archive instead of delete](#archive-instead-of-delete)).
-
-## Entry format
-
-Each entry is `entries/<id>.md`: YAML front matter between `---` lines, then a Markdown body.
-
-```yaml
----
-schema_version: 1
-id: "3f2b8c1e-9d4a-4b7e-8f1a-2c3d4e5f6a7b"
-title: "Standalone descriptive title"
-summary: "One or two sentences."
-project: "Inbox"
-topics: ["architecture"]
-type: "research"
-created_at: "2026-10-29T12:00:00.000Z"
-updated_at: "2026-10-29T12:00:00.000Z"
-status: "draft"
-sources: []
-attachments: []
----
-Markdown body...
-```
-
-Rules:
-
-- `title` is 1-200 characters on one line; `summary` is 1-500 characters on one line.
-- `project` defaults to `Inbox` when missing or blank (1-80 characters).
-- `topics` are lowercase slugs (`[a-z0-9]+(-[a-z0-9]+)*`), at most 20, deduplicated, and sorted.
-  The tool normalizes what you type (diacritics removed, lowercase, punctuation becomes `-`).
-- `type` is a lowercase slug. Suggested values: `research`, `idea`, `report`, `summary`,
-  `bug-list`, `decision`, `how-to`, `note`. Other slugs are accepted.
-- `status` is `draft`, `ready`, or `archived`. Every new entry starts as `draft`. `archived_from`
-  appears only while an entry is archived.
-- `sources` are real provenance only: `{"kind": "url", "url": "https://..."}`,
-  `{"kind": "repo", "repo": "owner/name", "commit": "<sha>", "path": "src/x.ts"}`, or
-  `{"kind": "conversation", "ref": "..."}`.
-- `attachments` are managed by the tool. Files are stored as
-  `attachments/<id>/<attachment-id>.<ext>`.
-- `id`, `created_at`, and the storage file name never change. Unknown keys are rejected.
-- The body must not be empty. Front matter is capped at 64 KiB and an entry at 2 MiB.
-- `revision` is the SHA-256 of the entry file's exact bytes. Pass it as `--expected-revision`
-  on every change.
-
-### Create input
+Create input contains `title`, `summary`, `kind` (`concept` or `report`), optional
+`project` (default Inbox), `topics`, `sources`, `context`, and prompt provenance.
+IDs, timestamps, and revisions are managed by the tool.
 
 ```json
-{
-  "title": "Standalone descriptive title",
-  "summary": "One or two sentences.",
-  "project": "Inbox",
-  "topics": ["architecture"],
-  "type": "research",
-  "body": "Markdown body...",
-  "sources": [{ "kind": "url", "url": "https://example.com", "title": "Example" }]
-}
+{"title":"Git rebasing","summary":"Replay commits on a new base.","kind":"concept","topics":["git"],"sources":[]}
 ```
-
-`id`, `status`, timestamps, and `attachments` are managed by the tool and are rejected if present.
-
-### Attachments in the body
-
-After `attach`, refer to a file from the Markdown body as `attachment:<attachment-id>`. The
-attachment id is listed under `attachments` in `notebook read <id> --json`:
-
-```markdown
-![pixel](attachment:6c1f0d3e-...)
-[report](attachment:0a9b8c7d-...)
-```
-
-The website rewrites these to its own attachment URLs. Only the entry's own attachments can be linked.
-
-HTML attachments (files with the `.html` extension) get a report viewer. A link such as
-`[report](attachment:<id>)` opens the viewer, and the entry page shows a "View page" link next to
-the download link. Do not use an HTML attachment as an image: `![x](attachment:<id>)` renders
-nothing. Only `.html` is recognized; `.htm` files are downloaded like any other file.
-
-## JSON contract
-
-With `--json`, stdout is exactly one JSON object:
-
-```json
-{ "api_version": 1, "ok": true, "data": { "...": "..." }, "backup": { "status": "pending", "reason": "no_remote" }, "warnings": [] }
-```
-
-Mutations return `data` with `id`, `title`, `status`, `url`, `revision`, and `commit`. The
-`backup` field is present for mutations and for the `backup` command. Errors look like this:
-
-```json
-{ "api_version": 1, "ok": false, "error": { "code": "STALE_REVISION", "message": "...", "details": { "current_revision": "..." } } }
-```
-
-Error codes: `USAGE`, `NOT_A_NOTEBOOK`, `NOT_FOUND`, `VALIDATION_FAILED`, `SECRET_DETECTED`,
-`STALE_REVISION`, `INVALID_TRANSITION`, `LOCK_TIMEOUT`, `DIRTY_TARGET`, `REPO_STATE`,
-`COMMIT_FAILED`, `ATTACHMENT_TOO_LARGE`, `PORT_IN_USE`, `UNSAFE_PATH`, `INTERNAL`.
-
-Exit codes: `0` success (including a backup that is pending or blocked), `1` errors, `2` usage
-errors. Without `--json`, results are printed as short text and diagnostics go to stderr. Set
-`NOTEBOOK_DEBUG=1` to see stack traces for unexpected errors.
-
-On `STALE_REVISION`, read the entry again and reconsider the change; do not retry the old change
-with the new revision blindly.
-
-## Backup and conflicts
-
-Each change is one git commit (`notebook: <action> <id> <title>`) that touches only the files it
-wrote. Commits are never pushed with force, and the tool never pulls, merges, or rebases.
-
-After a change, the tool tries `git push` with a 10-second timeout and no prompts:
-
-- `backup: pushed`. Everything is on the remote.
-- `backup: pending (no_remote)`. No remote is configured yet. Changes stay local.
-- `backup: pending (push_failed)` or `(timeout)`. The push did not complete. Run `notebook backup`
-  once the cause is fixed (network, credentials, remote path).
-- `backup: blocked (secret_in_unpublished_commit)`. A secret was found in commits that have not been
-  pushed, so nothing is pushed. See [Blocked backups](#blocked-backups).
-
-Remote URLs and raw git output are never printed. `notebook status` shows whether a remote is
-configured and how many commits are unpublished.
-
-### Diverged remote
-
-If the remote has commits you do not have locally (for example you pushed from another machine),
-the push is rejected and reported as `pending (push_failed)`. The tool will not force it. Resolve it
-yourself, with no write operation running:
 
 ```sh
-git -C ~/notebook fetch origin
-git -C ~/notebook log --oneline --left-right HEAD...origin/main   # what differs
-git -C ~/notebook merge origin/main                                 # or rebase, your choice
+notebook page create --input /tmp/page.json --html /tmp/page.html --json
+notebook page search "rebasing" --topic git --json
+notebook page read <id> --json
+notebook page update <id> --expected-revision <hash> --input /tmp/patch.json --html /tmp/page.html --json
+notebook page open <id>
 ```
 
-Resolve any conflicts in `entries/` by hand, then check the changed entries and retry:
+Updates require `change_summary` and preserve omitted fields. `context: null`
+clears context; metadata-only updates can omit `--html`. Every mutation checks the
+latest revision and refuses stale updates. HTML must be a regular file,
+at most 20 MiB. Titles are at most 200 characters, summaries 500, project names 80,
+and topics at most 20 normalized slugs. Text fields are bounded; serialized YAML
+metadata is at most 64 KiB. Unknown and managed input fields are rejected.
+
+### Prompts
+
+Templates use exact `{{name}}` placeholders. Named inputs have descriptions and
+optional literal defaults; inputs without defaults are required.
+
+```json
+{"title":"Explain visually","description":"Create an interactive explanation.","template":"Explain {{concept}} for {{audience}} visually.","inputs":[{"name":"concept","description":"What to explain"},{"name":"audience","description":"Who it is for","default":"a curious developer"}]}
+```
 
 ```sh
-notebook validate <id>
-notebook backup
+notebook prompt create --input /tmp/prompt.json --json
+notebook prompt search "visually" --json
+notebook prompt read <id> --json
+notebook prompt render <id> --values /tmp/values.json --json
+notebook prompt update <id> --expected-revision <hash> --input /tmp/patch.json --json
+notebook prompt open <id>
 ```
 
-Do not leave a merge or rebase half-finished: the tool refuses to write while the repository is
-mid-merge or mid-rebase (`REPO_STATE`).
+Example values: `{"concept":"Git worktrees"}`. Rendering substitutes values
+literally once. Missing/unknown inputs fail validation; templates do not execute
+code, read files, or expand environment variables. Rendering never saves content
+or authorizes execution. Prompt updates require `change_summary`.
 
-### Blocked backups
+Browser inputs and previews stay in memory, clear on navigation/reload, and are
+not sent to the server or written to storage. Copy is user initiated, with a
+selectable-text fallback. Updating a prompt does not regenerate pages. A page may
+pin the prompt's ID and exact revision as optional provenance.
 
-`backup: blocked (secret_in_unpublished_commit)` means an unpublished commit contains a secret. The
-secret is still in local history, and the tool will not push it. Remove the secret from the entry
-with `notebook update`, then rewrite the unpublished commits with git yourself (for example
-`git -C ~/notebook rebase -i origin/main`, or reset the unpublished commits and recommit). Then run
-`notebook backup`.
+### History
 
-If a secret was already pushed, treat it as leaked: revoke or rotate it. Removing it from remote
-history needs a force push, which you must do manually outside this tool.
+Use either `page` or `prompt`:
 
-## Concurrency
+```sh
+notebook page history <id> --json
+notebook page version <id> --commit <full-commit-id> --json
+notebook page restore <id> --commit <full-commit-id> --expected-revision <current> --json
+```
 
-Every write takes an exclusive `flock` on `.notebook/write.lock`. Several agents or shells can save
-at the same time, and writes are serialized. If another write holds the lock for more than about
-10 seconds, the command fails with `LOCK_TIMEOUT`; retry once. Reads and searches do not take the lock.
+History is also browsable on the website. Stable URLs are `/pages/<id>` and
+`/prompts/<id>`, including after updates, renames, and restoration. Restore makes
+a new commit without resetting the repository. The application never deletes
+content or rewrites Git history. Records saved by older versions may contain an
+`archived` field; it is ignored and dropped on the next save.
 
-Updates are checked against the revision inside the lock, so two agents cannot silently overwrite
-each other: the second one gets `STALE_REVISION`.
-
-## Data layout
+## Storage and consistency
 
 ```text
 <notebook>/
-  README.md
-  .gitignore              # ".notebook/"
-  .notebook-format        # "notebook-format 1" marker; the CLI only works on notebooks that have it
-  entries/<id>.md         # YAML front matter + Markdown body
-  attachments/<id>/<attachment-id>.<ext>
-  .notebook/              # ignored runtime state (write lock, backup state, website log)
+  .notebook-format         # notebook-format 2
+  .gitignore              # excludes .notebook/
+  pages/<id>/page.yaml     # page metadata
+  pages/<id>/index.html    # primary artifact
+  pages/<id>/context.md    # optional supporting context
+  prompts/<id>.md          # YAML metadata and template text
+  .notebook/               # private locks, recovery journal, backup state and logs
 ```
 
-The notebook directory is created with mode 0700; entries and attachments are written with mode 0600.
-Agents never run git inside the notebook. You may use git there yourself for the manual steps described below.
+The application supports format 2. Initialization refuses a non-empty directory
+that is not already a supported notebook. It does not adopt or convert other
+repositories. Extra files already stored in the notebook are preserved and have
+no browsing or editing interface. Existing page provenance remains readable.
 
-## Secret detection
+New-item reads use a single committed Git snapshot. Uncommitted manual edits are
+not published and block mutations targeting them. Each successful mutation is
+one commit containing only its own files, under a shared write lock. Page
+revisions cover metadata, HTML, and context presence/content.
 
-Entries and attachments are scanned before they are written. Matches for private keys, common
-cloud and service tokens (AWS, GitHub, Slack, OpenAI and Anthropic keys, Google and Stripe keys),
-JWTs, credential assignments (`password=...`, `api_key: ...`), and URLs with embedded passwords are
-blocked with `SECRET_DETECTED`. The error names the rule and location (for example `body:line 12`)
-but never the matched text. Unpublished commits are scanned again before any push.
+Interrupted writes recover before the next mutation. If recovery encounters
+unexpected manual Git/index/target changes, it stops instead of overwriting them.
+Do not delete `.notebook/transactions/` as cache cleanup. Normal committed content
+remains readable while publication is in progress. Recovery tests cover process
+interruptions, not every possible hardware failure.
 
-This is a safeguard, not a guarantee:
+## Privacy and report isolation
 
-- It cannot find every secret, and it will miss secrets in forms it does not know.
-- Binary attachments (images, PDFs, archives) are not scanned. Check them yourself before attaching.
-- There is no bypass flag, by design.
-- Once a commit is pushed, git history keeps the content. Removing it later is manual, forceful
-  work and does not reach clones or copies that already exist.
+Pages are self-contained HTML: inline CSS/scripts and embedded images/fonts.
+External scripts, styles, fonts, frames, and data requests are blocked. Reports
+run inside an iframe with `sandbox="allow-scripts"`, without same-origin access.
+The content response also applies a sandbox, including when opened directly.
+Scripts cannot read the notebook shell, prompt inputs, cookies, or browser storage.
+Current and historical reports use the same protections.
 
-## Archive instead of delete
+The trusted shell owns navigation, history, and downloads. Prompt preview uses a
+small local script with a separate CSP. The server binds to `127.0.0.1`, validates
+Host, accepts only GET/HEAD, and sends no-store, nosniff, and no-referrer headers.
+Localhost is not authentication: other programs/users on the machine can reach
+the site while it runs. `serve` stops with Ctrl+C; a server launched by `open`
+continues running until stopped.
 
-Entries are never deleted by the tool. `archive` hides an entry from the home page, projects,
-topics, and default search, and keeps its content and attachments; `restore` brings it back.
+The viewer is intended for your own reports. A frame can navigate itself, and a
+script can consume CPU/memory. Downloaded HTML opened from disk does not inherit
+the server's response-header protections. Open reports through the viewer.
 
-Deleting an entry for real is manual git work: remove the entry file and its attachment folder,
-commit, and push. The entry stays in git history, and removing it from history means rewriting it
-and force-pushing, which you do by hand outside this tool. Clones made before that keep their copies.
+Metadata, context, templates, and HTML are scanned for common secret patterns
+before writing. Unpublished history is scanned again before backup, including
+files outside the current content directories. The scanner reports rule/location,
+never matched values. It is a safeguard, not proof that content contains no secret.
+There is no bypass flag. Nothing is captured automatically; no telemetry or
+external report dependency is added.
 
-## Website
+## Optional private backup
 
-`notebook open [ID] [--no-browser]` starts the local website if it is not running, or reuses it, and
-then opens the home page (or the entry page when an ID is given) with `xdg-open`. It prints the URL in
-any case. `notebook serve` runs the same website in the foreground until Ctrl+C.
+Create an empty private repository, then:
 
-The default port is `43127` (`--port N` or `NOTEBOOK_PORT`). The tool never silently changes
-port: if another program holds it, you get `PORT_IN_USE`. A website started by `open` writes its
-output to `.notebook/server.log` inside the notebook.
+```sh
+git -C ~/notebook remote add origin <private-repository-url>
+notebook backup --json
+```
 
-- The entry URL is `http://127.0.0.1:<port>/entries/<id>`. It works only while the website runs.
-  Agents report the URL and remind you to run `notebook open` if you need it live.
-- The server listens on `127.0.0.1` only and answers `GET` and `HEAD`; other methods get `405`.
-  Requests must use a `Host` of `127.0.0.1:<port>` or `localhost:<port>`; anything else gets `421`.
-- It is read-only: it lists, searches, and shows entries, and downloads attachments.
-  Attachments are served only when the entry lists them. On the download route
-  (`/attachments/<entry-id>/<attachment-id>`), raster images (PNG, JPEG, GIF, WebP) are shown
-  inline. Everything else is downloaded as `application/octet-stream`, including HTML and SVG.
-- Archived entries are hidden from the home page, projects, topics, and search. Search includes them
-  with `include_archived=1` or `status=archived`. An archived entry is still reachable at
-  `/entries/<id>`, with an "Archived" banner.
-- Markdown is rendered without raw HTML. Links are limited to `http`, `https`, `mailto`, and the
-  entry's own attachments. Images may only come from the entry's own attachments.
-- Notebook pages use no JavaScript. Every response sends a restrictive Content-Security-Policy,
-  `nosniff`, `no-referrer`, and `Cache-Control: no-store`, and `X-Frame-Options: DENY`, except the
-  report content route below, which sends `SAMEORIGIN`.
+Use the appropriate directory if you configured `$NOTEBOOK_DIR`. Git credentials
+must already work non-interactively. The tool never changes global Git config.
+After saves it tries a protected push with a 10-second timeout, never force-pushes,
+and never automatically pulls, merges, or rebases.
 
-### HTML report viewer
+- `pushed`: committed content reached the remote.
+- `pending (no_remote)`: content is saved locally; no remote is configured.
+- `pending (push_failed)` or `(timeout)`: local save succeeded; retry backup later.
+- `blocked (secret_in_unpublished_commit)`: nothing is pushed; remove the secret
+  from unpublished history manually before retrying.
 
-An HTML attachment is a file with the `.html` extension (stored as `text/html`). Two routes serve it,
-and both return 404 for any other attachment. Both also work for archived entries.
-
-- `/attachments/<entry-id>/<attachment-id>/view` is the viewer: a full-width Notebook page with a
-  toolbar (a "Notebook" home link, the filename, "Back to entry", and "Download HTML"). The report
-  runs in an `<iframe sandbox="allow-scripts">` with no `allow-same-origin`, `referrerpolicy="no-referrer"`,
-  pointing at the content route. The viewer page has no JavaScript of its own. Its response policy is
-  `default-src 'none'; style-src 'self'; img-src 'self'; frame-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
-  with `X-Frame-Options: DENY`.
-- `/attachments/<entry-id>/<attachment-id>/content` returns the raw HTML as `text/html; charset=utf-8`
-  with `Content-Disposition: inline`. Its policy is
-  `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'`,
-  with `X-Frame-Options: SAMEORIGIN` so the viewer can frame it. The sandbox is part of the response
-  header, so opening this URL directly is sandboxed too.
-- "Download HTML" in the viewer uses the download route, which still returns `application/octet-stream`.
-
-In plain words: the sandbox gives the report its own opaque origin, so it cannot read the notebook
-pages, cookies, or browser storage. Inline scripts and styles run. The policy blocks resources from
-any other source, except `data:` and `blob:` images and `data:` fonts, and it blocks `fetch`, XHR,
-WebSocket, EventSource, and beacons. The sandbox also blocks forms, popups, downloads, top-level
-navigation, and dialogs.
-
-A report must be one self-contained `.html` file:
-
-- Inline `<script>` and `<style>` work. Images only as `data:` or `blob:` URLs; fonts only as `data:` URLs.
-- No external or relative scripts, stylesheets, images, or fonts.
-- No `fetch`, XHR, WebSocket, or EventSource.
-- No `eval` or `new Function` (the policy has no `'unsafe-eval'`), so libraries that need them do not work.
-- No forms, popups, modals (`alert`, `confirm`), nested frames, workers, or downloads.
-
-Limitations:
-
-- The viewer is designed for your own agent-generated reports, not for hostile HTML.
-- The policy and sandbox block resource loads and data requests, but they do not guarantee zero
-  network traffic. For example, a script can still navigate its own frame to an external URL.
-- A downloaded HTML file opened directly from disk in a browser is not protected by these headers.
-  Open reports through the viewer.
-- A JavaScript report can still use CPU and memory.
-
-**Localhost is not authentication.** Any program or user account on this machine that can reach
-`127.0.0.1` can read the notebook through the website while it runs. Stop `serve` with Ctrl+C.
-A website started by `open` keeps running until you stop its process (`pgrep -af "cli.ts serve"`,
-then `kill <pid>`).
+A secret removed in a later commit is still present in earlier history and blocks
+backup. If a secret was already pushed, revoke it. Resolve divergent remotes and
+unfinished Git operations manually; the tool will not overwrite remote work.
 
 ## Development
 
-See [AGENTS.md](AGENTS.md) for repository guidance and safety rules when contributing.
+See [AGENTS.md](AGENTS.md).
 
 ```sh
-npm ci                # install dependencies from package-lock.json
-npm test              # node:test suites (test/*.test.ts)
-npm run typecheck     # tsc --noEmit
-npm run lint          # biome check .
-npm run test:e2e      # end-to-end run through bin/notebook, in a temp directory
+npm ci
+npm test
+npm run typecheck
+npm run lint
+npm run test:e2e
 ```
 
-Tests use temporary directories, local bare repositories, and free localhost ports. They never touch
-your home directory, `~/notebook`, or global git configuration, and they make no network connections.
-The end-to-end script sets its own `HOME`, git configuration, notebook directory, and port, drives
-everything through `bin/notebook`, removes its website process, and deletes its temporary directory.
-It needs `git`, `flock`, and `pgrep`.
+Tests automatically use isolated HOME/Git configuration, temporary notebooks,
+local bare remotes, and free localhost ports. They never use the real notebook.
+There is no build step. Browser checks use synthetic data and an isolated profile.
+
+## Uninstall
+
+Remove the installed launcher (only if it points to this checkout) and the
+installed `notebook` skill folders under `~/.claude/skills/` and `~/.codex/skills/`.
+Stop any running notebook server before removing the checkout. Content stays in
+your notebook directory until you explicitly remove it yourself.

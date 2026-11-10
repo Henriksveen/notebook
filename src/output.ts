@@ -1,10 +1,6 @@
 import type { BackupResult, BackupState } from "./backup.ts";
 import { NotebookError } from "./errors.ts";
-import type { InitResult, MutationResult } from "./notebook.ts";
-import type { Entry } from "./schema.ts";
-import type { SearchHit } from "./search.ts";
-import type { LoadedEntry } from "./store.ts";
-
+import type { InitResult } from "./notebook.ts";
 export const API_VERSION = 1;
 
 export interface Outcome {
@@ -34,29 +30,32 @@ export interface StatusData {
 export const USAGE_TEXT = `Usage: notebook [--dir PATH] [--json] [--port N] <command> [options]
 
 Commands:
-  init [--remote URL]                     Create the notebook, or add a remote to it
-  create --input FILE|-                   Save a new draft entry from JSON
-  validate (--input FILE|- | ID)          Check an entry without changing anything
-  search [QUERY...] [--project X] [--topic X] [--type X] [--status X]
-         [--include-archived] [--limit N] [--offset N]
-  read ID                                 Show an entry with its body and revision
-  update ID --expected-revision HASH --input FILE|-
-  ready ID --expected-revision HASH       Mark a draft as ready
-  archive ID --expected-revision HASH     Archive a draft or ready entry
-  restore ID --expected-revision HASH     Restore an archived entry
-  attach ID --expected-revision HASH --file PATH [--name NAME]
-  status                                  Show repository and backup status
-  backup                                  Retry pushing unpublished commits
-  open [ID] [--no-browser]                Start or reuse the local website and open it
-  serve                                   Run the local website in the foreground
+  page <create|read|update|search|history|version|restore|open>
+  prompt <create|read|update|search|render|history|version|restore|open>
+  init [--remote URL]                 Initialize the notebook
+  status                              Show repository and backup status
+  backup                              Retry publishing local commits
+  open [--no-browser]                Open the Pages library
+  serve                               Run the local website until Ctrl+C
+
+Item operations:
+  create --input FILE|- [--html FILE (required for pages)]
+  read ID
+  update ID --expected-revision HASH --input FILE|- [--html FILE]
+  search [QUERY...] [--project X] [--topic X] [--kind concept|report (pages)]
+         [--limit N] [--offset N]
+  history ID
+  version ID --commit HASH
+  restore ID --commit HASH --expected-revision HASH
+  open ID [--no-browser]
+  render ID --values FILE|-           Prompts only
 
 Global options:
-  --dir PATH    Notebook directory (default: $NOTEBOOK_DIR or ~/notebook)
-  --json        Print one JSON object on stdout
-  --port N      Website port for URLs (default: $NOTEBOOK_PORT or 43127)
-  --help, -h    Show this help
+  --dir PATH   Default: $NOTEBOOK_DIR or ~/notebook
+  --port N     Default: $NOTEBOOK_PORT or 43127
+  --json       Print one JSON object on stdout
+  --help, -h   Show this help
 `;
-
 export function successJson(outcome: Outcome): string {
   const envelope = {
     api_version: API_VERSION,
@@ -119,11 +118,6 @@ export function failureText(failure: Failure): string {
   return `${lines.join("\n")}\n`;
 }
 
-export function backupSummary(backup: BackupResult): string {
-  if (backup.status === "pushed") return "Backup: pushed";
-  return `Saved locally; backup ${backupLabel(backup)}`;
-}
-
 export function backupLabel(backup: BackupResult): string {
   return backup.reason ? `${backup.status} (${backup.reason})` : backup.status;
 }
@@ -133,54 +127,6 @@ export function formatInit(result: InitResult): string {
     ? `Created notebook at ${result.dir}`
     : `Notebook already exists at ${result.dir}`;
   return `${heading}\nRemote: ${result.remote ? "configured" : "not configured"}`;
-}
-
-export function formatMutation(verb: string, result: MutationResult): string {
-  return [
-    `${verb} "${result.title}" (${result.status})`,
-    `ID: ${result.id}`,
-    `URL: ${result.url}`,
-    `Revision: ${result.revision}`,
-    backupSummary(result.backup),
-  ].join("\n");
-}
-
-export function formatEntry(loaded: LoadedEntry, url: string): string {
-  const { entry } = loaded;
-  const lines = [
-    entry.title,
-    `ID: ${entry.id}`,
-    `Status: ${statusLabel(entry)}`,
-    `Project: ${entry.project}`,
-    `Type: ${entry.type}`,
-  ];
-  if (entry.topics.length > 0) lines.push(`Topics: ${entry.topics.join(", ")}`);
-  lines.push(
-    `Summary: ${entry.summary}`,
-    `URL: ${url}`,
-    `Revision: ${loaded.revision}`,
-  );
-  for (const attachment of entry.attachments) {
-    lines.push(
-      `Attachment: ${attachment.filename} (${attachment.media_type}, ${attachment.size} bytes, id ${attachment.id})`,
-    );
-  }
-  return `${lines.join("\n")}\n\n${loaded.body}`;
-}
-
-function statusLabel(entry: Entry): string {
-  return entry.archived_from
-    ? `${entry.status} (from ${entry.archived_from})`
-    : entry.status;
-}
-
-export function formatSearch(total: number, hits: SearchHit[]): string {
-  if (hits.length === 0) return "No matching entries.";
-  const lines = [`${total} match(es), showing ${hits.length}:`];
-  for (const hit of hits) {
-    lines.push(`${hit.id}  [${hit.status}] ${hit.title} (${hit.project})`);
-  }
-  return lines.join("\n");
 }
 
 export function formatStatus(data: StatusData): string {

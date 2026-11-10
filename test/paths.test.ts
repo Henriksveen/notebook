@@ -2,16 +2,15 @@ import assert from "node:assert/strict";
 import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { after, describe, it } from "node:test";
-import { DEFAULT_PORT, entryUrl, resolvePort } from "../src/config.ts";
-import {
-  assertSafePath,
-  entryFilePath,
-  isValidId,
-  resolveDataDir,
-} from "../src/paths.ts";
+import { DEFAULT_PORT, resolvePort } from "../src/config.ts";
+import { itemUrl } from "../src/library.ts";
+import { itemBase } from "../src/library-store.ts";
+import { assertSafePath, isValidId, resolveDataDir } from "../src/paths.ts";
 import { cleanupTempDirs, ID_1, makeTempDir } from "./fixtures.ts";
 
 after(cleanupTempDirs);
+const pagePath = (root: string, id: string) =>
+  join(root, itemBase("page", id), "index.html");
 
 describe("data directory resolution", () => {
   it("prefers the flag, then NOTEBOOK_DIR, then ~/notebook", () => {
@@ -44,8 +43,8 @@ describe("port configuration", () => {
     );
     assert.throws(() => resolvePort({ env: { NOTEBOOK_PORT: "99999" } }));
     assert.equal(
-      entryUrl(ID_1, 43127),
-      `http://127.0.0.1:43127/entries/${ID_1}`,
+      itemUrl("page", ID_1, 43127),
+      `http://127.0.0.1:43127/pages/${ID_1}`,
     );
   });
 });
@@ -60,10 +59,10 @@ describe("id validation", () => {
   });
 
   it("rejects invalid ids before building a path", () => {
-    assert.throws(() => entryFilePath("/root", "../x"), { code: "USAGE" });
+    assert.throws(() => pagePath("/root", "../x"), { code: "USAGE" });
     assert.equal(
-      entryFilePath("/root", ID_1),
-      join("/root", "entries", `${ID_1}.md`),
+      pagePath("/root", ID_1),
+      join("/root", "pages", ID_1, "index.html"),
     );
   });
 });
@@ -71,26 +70,26 @@ describe("id validation", () => {
 describe("path safety", () => {
   it("accepts normal paths inside the root", async () => {
     const root = await makeTempDir();
-    await mkdir(join(root, "entries"));
-    await assertSafePath(root, entryFilePath(root, ID_1));
+    await mkdir(join(root, "pages", ID_1), { recursive: true });
+    await assertSafePath(root, pagePath(root, ID_1));
   });
 
   it("rejects symlinked entries directories", async () => {
     const root = await makeTempDir();
     const elsewhere = await makeTempDir();
-    await symlink(elsewhere, join(root, "entries"));
-    await assert.rejects(assertSafePath(root, entryFilePath(root, ID_1)), {
+    await symlink(elsewhere, join(root, "pages"));
+    await assert.rejects(assertSafePath(root, pagePath(root, ID_1)), {
       code: "UNSAFE_PATH",
     });
   });
 
-  it("rejects symlinked entry files", async () => {
+  it("rejects symlinked page files", async () => {
     const root = await makeTempDir();
     const target = join(await makeTempDir(), "outside.md");
     await writeFile(target, "secret");
-    await mkdir(join(root, "entries"));
-    await symlink(target, entryFilePath(root, ID_1));
-    await assert.rejects(assertSafePath(root, entryFilePath(root, ID_1)), {
+    await mkdir(join(root, "pages", ID_1), { recursive: true });
+    await symlink(target, pagePath(root, ID_1));
+    await assert.rejects(assertSafePath(root, pagePath(root, ID_1)), {
       code: "UNSAFE_PATH",
     });
   });
